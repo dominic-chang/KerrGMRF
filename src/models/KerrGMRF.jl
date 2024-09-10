@@ -31,7 +31,7 @@ function (prof::EmissivityModel)(pix::Krang.AbstractPixel, geometry::Krang.ConeG
     return observation
 end
 
-struct FancySemiAnalyticModel{A, T, F} <: ComradeBase.AbstractModel
+struct KerrGMRF{A, T, F} <: ComradeBase.AbstractModel
     met::Krang.Kerr{A}
     θo::A
     θs::A
@@ -42,14 +42,32 @@ struct FancySemiAnalyticModel{A, T, F} <: ComradeBase.AbstractModel
     η::A
     bulkEmissionModel::T
     metadata::F
-    function FancySemiAnalyticModel(θ, metadata)
-        (;spin, θo, χ, ι, βv, spec, η) = θ
+    function KerrGMRF(θ, metadata)
+        (;spin, θo, θs, χ, ι, βv, spec, η) = θ
         bulkmodel = bulk(θ, metadata)
-        new{typeof(θo), typeof(bulkmodel), typeof(metadata)}(Krang.Kerr(spin), θo, χ, ι, βv, spec, η, bulkmodel, metadata)
+        new{typeof(θo), typeof(bulkmodel), typeof(metadata)}(Krang.Kerr(spin), θo, θs, χ, ι, βv, spec, η, bulkmodel, metadata)
     end
 end
 
-function Comrade.intensity_point(m::FancySemiAnalyticModel{T}, p) where {T}
+function bulk(θ, metadata)
+    (;c, σimg, τm, αi, αo) = θ
+    (;ftot, bulkimg) = metadata
+    rad = RadialDblPower(αi, αo)
+
+    mpr  = modify(RingTemplate(rad, AzimuthalCosine(0.0, 0.0)), Stretch(τm))
+    intensitymap!(bulkimg, mpr)
+    
+    bulkimg ./= flux(bulkimg)
+    rast = apply_fluctuations(CenteredLR(), bulkimg, σimg.*c.params) 
+    rast .*= (ftot)
+    #parent(rast) .*=  ftot # Do this if Enzyme has an issue
+    #return ContinuousImage((ftot).*rast, BSplinePulse{3}())
+    return VLBISkyModels.InterpolatedImage(rast)
+end
+
+#TODO: Add a seperate GMRF for each cone
+
+function Comrade.intensity_point(m::KerrGMRF{T}, p) where {T}
     (; X, Y) = p
     (;ι, η, χ, βv, spec, θs) = m 
 
@@ -76,3 +94,4 @@ function Comrade.intensity_point(m::FancySemiAnalyticModel{T}, p) where {T}
     ans = mesh.material(pix, (mesh.geometry))
     return ans
 end
+

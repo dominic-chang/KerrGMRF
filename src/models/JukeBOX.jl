@@ -57,13 +57,13 @@ end
     end
         
     subimgs = (0,1)
-    geometry1 = Krang.ConeGeometry((θs), (magfield1, vel, subimgs, profile, spec))
-    geometry2 = Krang.ConeGeometry((π - θs), (magfield2, vel, subimgs, profile, spec))
+    geometry1 = Krang.ConeGeometry((θs)*T(π/180), (magfield1, vel, subimgs, profile, spec))
+    geometry2 = Krang.ConeGeometry((π - θs)*T(π/180), (magfield2, vel, subimgs, profile, spec))
     geometry = geometry1 ⊕ geometry2
 
     mesh = Krang.Mesh(geometry, material)
 
-    pix = Krang.IntensityPixel(Krang.Kerr(m.spin), -X, Y, m.θo)
+    pix = Krang.IntensityPixel(Krang.Kerr(m.spin), -X, Y, m.θo*T(π/180))
     ans = mesh.material(pix, (mesh.geometry))
     return ans
 end
