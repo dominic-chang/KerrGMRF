@@ -50,11 +50,11 @@ struct KerrGMRF{A, T, F} <: ComradeBase.AbstractModel
 end
 
 function bulk(θ, metadata)
-    (;c, σimg, τm, αi, αo) = θ
+    (;c, σimg, rpeak, p1, p2) = θ
     (;ftot, bulkimg) = metadata
-    rad = RadialDblPower(αi, αo)
+    rad = RadialDblPower(p1, p2)
 
-    mpr  = modify(RingTemplate(rad, AzimuthalCosine(0.0, 0.0)), Stretch(τm))
+    mpr  = modify(RingTemplate(rad, AzimuthalCosine(0.0, 0.0)), Stretch(rpeak))
     intensitymap!(bulkimg, mpr)
     
     bulkimg ./= flux(bulkimg)
