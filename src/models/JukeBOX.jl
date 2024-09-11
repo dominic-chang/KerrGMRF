@@ -43,7 +43,7 @@ end
 
 @inline function ComradeBase.intensity_point(m::JuKeBOX{T}, p) where {T}
     (; X, Y) = p
-    (;ι, η, χ, βv, θs, rpeak, p1, p2, spec) = m 
+    (;ι, η, χ, βv, θo, θs, rpeak, p1, p2, spec) = m 
 
     #η2 = π - η
     magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
@@ -57,13 +57,13 @@ end
     end
         
     subimgs = (0,1)
-    geometry1 = Krang.ConeGeometry((θs)*T(π/180), (magfield1, vel, subimgs, profile, spec))
-    geometry2 = Krang.ConeGeometry((π - θs)*T(π/180), (magfield2, vel, subimgs, profile, spec))
+    geometry1 = Krang.ConeGeometry(θs*T(π/180), (magfield1, vel, subimgs, profile, spec))
+    geometry2 = Krang.ConeGeometry(π-θs*T(π/180), (magfield2, vel, subimgs, profile, spec))
     geometry = geometry1 ⊕ geometry2
 
     mesh = Krang.Mesh(geometry, material)
 
-    pix = Krang.IntensityPixel(Krang.Kerr(m.spin), -X, Y, m.θo*T(π/180))
+    pix = Krang.IntensityPixel(Krang.Kerr(m.spin), -X, Y, θo*T(π/180))
     ans = mesh.material(pix, (mesh.geometry))
     return ans
 end

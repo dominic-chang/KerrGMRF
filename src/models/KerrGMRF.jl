@@ -69,7 +69,7 @@ end
 
 function Comrade.intensity_point(m::KerrGMRF{T}, p) where {T}
     (; X, Y) = p
-    (;ι, η, χ, βv, spec, θs) = m 
+    (;ι, η, χ, βv, spec, θo, θs) = m 
 
     #η2 = π - η
     magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
@@ -85,12 +85,12 @@ function Comrade.intensity_point(m::KerrGMRF{T}, p) where {T}
         
     subimgs = (0,1)
     geometry1 = Krang.ConeGeometry(θs*T(π/180), (magfield1, vel, subimgs, profile, spec))
-    geometry2 = Krang.ConeGeometry(180-θs*T(π/180), (magfield2, vel, subimgs, profile, spec))
+    geometry2 = Krang.ConeGeometry(π-θs*T(π/180), (magfield2, vel, subimgs, profile, spec))
     geometry = geometry1 ⊕ geometry2
 
     mesh = Krang.Mesh(geometry, material)
 
-    pix = Krang.IntensityPixel(m.met, -X, Y, m.θo*T(π/180))
+    pix = Krang.IntensityPixel(m.met, -X, Y, θo*T(π/180))
     ans = mesh.material(pix, (mesh.geometry))
     return ans
 end
