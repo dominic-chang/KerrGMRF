@@ -15,7 +15,7 @@ fractional_noise = 0.01
 bulkx = 40.0
 bulky = 40.0
 npix = 16
-bulkpix = 120
+bulkpix = 60
 fovx = μas2rad(100.0)
 fovy = μas2rad(100.0)
 
@@ -48,30 +48,36 @@ using Distributions, DistributionsAD
 true_intmap |> imageviz
 
 # # Define model to fit
-ModifiedKerrGMRF(θ, meta) =  RenormalizedFlux(modify(KerrGMRF(θ, meta), Stretch(θ.m_d, θ.m_d)),0.6)
+function ModifiedKerrGMRF(θin, meta) 
+#function ModifiedKerrGMRF(θ, meta) 
+    (;θ) = meta
+    params = (;m_d = θin.m_d, spin = θ.spin, θo = θ.θo, θs = θ.θs, rpeak = θin.rpeak, p1 = θin.p1, p2 = θin.p2, χ = θ.χ, ι = θ.ι, βv = θ.βv, spec = θ.spec, η = θ.η, c = θin.c, σimg = θin.σimg)
+    #RenormalizedFlux(modify(KerrGMRF(θ, meta), Stretch(θ.m_d, θ.m_d)),0.6)
+    RenormalizedFlux(modify(KerrGMRF(params, meta), Stretch(θin.m_d, θin.m_d)),0.6)
+end
 bulkgrid = imagepixels(bulkx, bulky, bulkpix, bulkpix, executor=ThreadsEx())
 grid = imagepixels(fovx, fovy, npix, npix; executor=Serial())#ThreadsEx(:Enzyme))
 
 bulkimg = IntensityMap(zeros(Float64, bulkpix, bulkpix), bulkgrid)
-skymeta = (;ftot = 1.0, bulkimg = bulkimg, screengrid=grid, npix=npix)
+skymeta = (;ftot = 1.0, bulkimg = bulkimg, screengrid=grid, npix=npix, θ=truth)
 
 beam = 2 # the resolution of the EHT image is roughly the shadow size
 rat = (beam/(step(bulkgrid.X)))
 crcache = ConditionalMarkov(GMRF, bulkgrid; order=2)
 cprior = HierarchicalPrior(crcache, truncated(InverseGamma(1.0, -log(0.1)*rat); upper=2*bulkpix))
 prior = (
-    τm = Uniform(1.0, 8.0),
-    αi = Uniform(0.1, 10.0),
-    αo = Uniform(0.1, 10.0),
+    rpeak = Uniform(1.0, 8.0),
+    p1 = Uniform(0.1, 10.0),
+    p2 = Uniform(0.1, 10.0),
     m_d = Uniform(μas2rad(2.0), μas2rad(8.0)), 
-    spin = Uniform(-0.99, 0.01),
-    θo = Uniform(1, 40.0),
-    θs = Uniform(40, 90),
-    χ = Uniform(-π/2, π/2),
-    ι = Uniform(0.0, π/2),
-    βv = Uniform(0.01, 0.99),
-    spec = Uniform(0.0, 3.0),
-    η = Uniform(0.0, π),
+    #spin = Uniform(-0.99, 0.01),
+    #θo = Uniform(1, 40.0),
+    #θs = Uniform(50, 90),
+    #χ = Uniform(-π/2, π/2),
+    #ι = Uniform(0.0, π/2),
+    #βv = Uniform(0.01, 0.99),
+    #spec = Uniform(0.0, 3.0),
+    #η = Uniform(0.0, π),
     c = cprior,
     σimg = Exponential(0.5)
 )
@@ -138,7 +144,7 @@ function (c::Callback)(state, loss, others...)
     end
 end
 
-xopt, sol = comrade_opt(post, Optimisers.Adam(), Optimization.AutoEnzyme(); initial_params=psample, maxiters=100_000, g_tol=1e-1, callback=Callback(10,()->nothing))
+xopt, sol = comrade_opt(post, Optimisers.Adam(), Optimization.AutoEnzyme(); initial_params=psample, maxiters=50_000, g_tol=1e-1, callback=Callback(10,()->nothing))
 
 img = intensitymap(skymodel(post, xopt), imagepixels(fovx, fovy, 10*npix, 10*npix))
 imageviz(img, size=(500, 400))
