@@ -17,9 +17,9 @@ function (prof::EmissivityModel)(pix::Krang.AbstractPixel, geometry::Krang.ConeG
         α, β = Krang.screen_coordinate(pix)
         νθ = cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n % 2 == 1) : β < 0
         rs, θs, ϕs, νr = (Krang.emission_coordinates_fast_light(pix, θs, β>0, n)[1:4])
-        dim = (X=rs*sin(θs) * cos(ϕs), Y=rs*sin(θs) * sin(ϕs))
+        dim = (X=rs*cos(ϕs), Y=rs*sin(ϕs))
 
-        if rs ≤ Krang.horizon(met)
+        if !(Krang.horizon(met) ≤ rs < T(Inf))
             continue
         end
         norm, redshift, lp = Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magfield, fluid_velocity, νr, νθ)
@@ -51,15 +51,15 @@ end
 
 function bulk(θ, metadata)
     (;c, σimg, rpeak, p1, p2) = θ
-    (;ftot, bulkimg) = metadata
-    rad = RadialDblPower(p1, p2)
+    (;bulkimg) = metadata
+    rad = RadialDblPower(p1, p2-1)
 
-    mpr  = modify(RingTemplate(rad, AzimuthalCosine(0.0, 0.0)), Stretch(rpeak))
+    mpr  = modify(RingTemplate(rad, AzimuthalUniform()), Stretch(rpeak))
     intensitymap!(bulkimg, mpr)
     
     bulkimg ./= flux(bulkimg)
     rast = apply_fluctuations(CenteredLR(), bulkimg, σimg.*c.params) 
-    rast .*= (ftot)
+    #rast .*= (ftot)
     #parent(rast) .*=  ftot # Do this if Enzyme has an issue
     #return ContinuousImage((ftot).*rast, BSplinePulse{3}())
     return VLBISkyModels.InterpolatedImage(rast)
