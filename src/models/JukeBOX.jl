@@ -1,15 +1,7 @@
-struct JuKeBOX{T} <: ComradeBase.AbstractModel
+struct JuKeBOX{T,F} <: ComradeBase.AbstractModel
     spin::T
     θo::T
-    θs::T
-    rpeak::T
-    p1::T
-    p2::T
-    χ::T
-    ι::T
-    βv::T
-    spec::T
-    η::T
+    mesh::F
 end
 
 function JuKeBOX(θ::NamedTuple)
@@ -26,26 +18,7 @@ function JuKeBOX(θ::NamedTuple)
         spec,
         η,
     ) = θ
-    return JuKeBOX(
-        spin,
-        θo,
-        θs,
-        rpeak,
-        p1,
-        p2,
-        χ,
-        ι,
-        βv,
-        spec,
-        η,
-    )
-end
-
-@inline function ComradeBase.intensity_point(m::JuKeBOX{T}, p) where {T}
-    (; X, Y) = p
-    (;ι, η, χ, βv, θo, θs, rpeak, p1, p2, spec) = m 
-
-    #η2 = π - η
+    T = typeof(θo)
     magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
     magfield2 = Krang.SVector(-sin(ι) * cos(η), -sin(ι) * sin(η), cos(ι))
     vel = Krang.SVector(βv, T(π / 2), χ)
@@ -63,6 +36,18 @@ end
 
     mesh = Krang.Mesh(geometry, material)
 
+    return JuKeBOX(
+        spin,
+        θo,
+        mesh
+    )
+end
+
+@inline function ComradeBase.intensity_point(m::JuKeBOX{T}, p) where {T}
+    (; X, Y) = p
+    (;mesh, θo,) = m 
+
+    
     pix = Krang.IntensityPixel(Krang.Kerr(m.spin), -X, Y, θo*T(π/180))
     ans = mesh.material(pix, (mesh.geometry))
     return ans
