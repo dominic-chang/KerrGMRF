@@ -23,7 +23,7 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D,S}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    pimg .= pimg * flux(m)/sum(pimg)
+    pimg .= pimg .* flux(m) ./ sum(pimg)
     return nothing
 end
 
