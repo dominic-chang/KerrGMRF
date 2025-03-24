@@ -29,14 +29,13 @@ function (prof::EmissivityModel{N,T,B})(pix::Krang.AbstractPixel{T}, intersectio
     return norm^(1 + spectral_index) * lp * prof
 end
 
-struct KerrGMRF{A, B, F, S} <: ComradeBase.AbstractModel
+struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
     met::Krang.Kerr{A}
     θo::A
     scene::S
-    bulkEmissionModel::B
     metadata::F
     function KerrGMRF(θ, metadata)
-        (;spin, θo, χ, ι, βv, spec, η) = θ
+        (;spin, θo, χ, ι, βv, spec, η, spec) = θ
         A = typeof(θo)
         bulkmodel = bulk(θ, metadata)
 
@@ -50,30 +49,45 @@ struct KerrGMRF{A, B, F, S} <: ComradeBase.AbstractModel
         mesh1 = Krang.Mesh(geometry1, material1)
         scene = Krang.Scene((mesh1, ))
 
-        new{typeof(θo), typeof(bulkmodel), typeof(metadata), typeof(scene)}(Krang.Kerr(spin), θo, scene, bulkmodel, metadata)
+        new{typeof(θo), typeof(scene), typeof(metadata)}(Krang.Kerr(spin), θo, scene, metadata)
     end
 end
 
+function write_to_disk(θ)
+    f = open(joinpath((@__DIR__),"err.txt"), "w")
+    write(f, string(θ))
+    close(f)
+end
+Enzyme.EnzymeRules.inactive(::typeof(write_to_disk), args...) = nothing
 function bulk(θ, metadata)
     (;c, σimg, rpeak, p1, p2) = θ
-    (;bulkimg) = metadata
+    (;bulkimg, bulkflucs, bulkint) = metadata
+    #(;bulkgrid, bulkint) = metadata
     rad = RadialDblPower(p1, p2-1)
 
-    mpr  = modify(RingTemplate(rad, AzimuthalUniform()), Stretch(rpeak))
+    mpr  = Comrade.modify(RingTemplate(rad, AzimuthalUniform()), Stretch(rpeak))
+    #bulkimg = intensitymap(mpr, bulkgrid)
     intensitymap!(bulkimg, mpr)
-    
-    bulkimg ./= flux(bulkimg)
-    rast = apply_fluctuations(CenteredLR(), bulkimg, σimg .* c.params) 
-    return VLBISkyModels.InterpolatedImage(rast)
+    #write_to_disk(θ)
+    #bulkimg .= [ComradeBase.intensity_point(mpr, (X=x, Y=y)) for x in bulkimg.X, y in bulkimg.Y]
+    #bulkflucs = σimg .* c.params
+    f  = flux(bulkimg)
+    for i in 1:length(bulkimg)
+        bulkimg[i] /= f
+        bulkflucs[i] = σimg * c.params[i]    
+    end
+    rast = apply_fluctuations(CenteredLR(), bulkimg, bulkflucs) 
+    return VLBISkyModels.InterpolatedImage(rast, bulkint)
 end
 #TODO: Add a seperate GMRF for each cone
 
-function Comrade.intensity_point(m::KerrGMRF{A,B,F}, p) where {A, B, F}
+function Comrade.intensity_point(m::KerrGMRF{A,S,F}, p) where {A, S, F}
     (; X, Y) = p
     (;scene, θo) = m
 
     pix = Krang.SlowLightIntensityPixel(m.met, -X, Y, θo*A(π)/180)
-    ans = render(pix,scene)#mesh.material(pix, (mesh.geometry))
+    ans = render(pix,scene)
     return ans #+ eps(A)
 end
+
 

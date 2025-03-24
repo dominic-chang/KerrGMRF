@@ -12,7 +12,7 @@ end
 function ComradeBase.intensitymap_analytic!(img::IntensityMap, m::RenormalizedFlux)
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    pimg .= pimg * flux(m)/sum(pimg)
+    pimg .*= flux(m) ./sum(pimg)
     return nothing
 end
 
@@ -23,7 +23,29 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D,S}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    pimg .= pimg .* flux(m) ./ sum(pimg)
+    pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
+
+function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
+                                                  <:ComradeBase.AbstractRectiGrid{D,
+                                                                                  <:ThreadsEx{:Enzyme}}},
+                                m::RenormalizedFlux) where {T,N,D}
+    ComradeBase.intensitymap_analytic!(img, m.model)
+    pimg = baseimage(img)
+    pimg .*= flux(m) ./ sum(pimg)
+    return nothing
+end
+
+function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
+                                                  <:ComradeBase.AbstractRectiGrid{D,
+                                                                                  <:ThreadsEx{:Polyester}}},
+                                m::RenormalizedFlux) where {T,N,D}
+    ComradeBase.intensitymap_analytic!(img, m.model)
+    pimg = baseimage(img)
+    pimg .*= flux(m) ./ sum(pimg)
+    return nothing
+end
+
+
 
