@@ -3,17 +3,20 @@ struct EmissivityModel{N, T, B} <: Krang.AbstractMaterial
     fluid_velocity::Krang.SVector{3, T}
     bulkmodel::B
     spectral_index::T
+    rpeak::T
+    p1::T
+    p2::T
     subimgs::NTuple{N,Int}
-
-    function EmissivityModel(magfield, vel, bulkmodel::B, spec::T) where {T, B}
-        new{2, T, B}(magfield, vel, bulkmodel, spec, (0,1))
+    
+    function EmissivityModel(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T) where {T, B}
+        new{2, T, B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, (0,1))
     end
 end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
 function (prof::EmissivityModel{N,T,B})(pix::Krang.AbstractPixel{T}, intersection) where {T,N,B}
-    (;magnetic_field, fluid_velocity, bulkmodel, spectral_index) = prof
+    (;magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2) = prof
     (;rs, ϕs, θs, νr, νθ) = intersection
 
     θo = Krang.inclination(pix)
@@ -25,8 +28,10 @@ function (prof::EmissivityModel{N,T,B})(pix::Krang.AbstractPixel{T}, intersectio
     ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
     dim = (X=rs*cos(ϕks), Y=rs*sin(ϕks))
 
-    prof = ComradeBase.intensity_point(bulkmodel, dim) * max(redshift, eps(T))^(T(3) + spectral_index)
-    return norm^(1 + spectral_index) * lp * prof
+    rat = (rs / rpeak)
+    ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index)*exp(ComradeBase.intensity_point(bulkmodel, dim))
+    # Add a clamp to lp to help remove hot pixels
+    return norm^(1 + spectral_index) * min(lp, T(1e2)) * ans
 end
 
 struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
@@ -35,19 +40,25 @@ struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
     scene::S
     metadata::F
     function KerrGMRF(θ, metadata)
-        (;spin, θo, χ, ι, βv, spec, η, spec) = θ
+        (;spin, θo, θs, χ, ι, βv, spec, η, spec, rpeak, p1, p2) = θ
+        (;bulkgrid, bulkint) = metadata
         A = typeof(θo)
-        bulkmodel = bulk(θ, metadata)
+        bulkmodel1 = bulk(θ.c1, θ.σimg, bulkgrid, bulkint)
+        bulkmodel2 = bulk(θ.c2, θ.σimg, bulkgrid, bulkint)
 
-        magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
         vel = Krang.SVector(βv, A(π / 2), χ)
 
-        material1 = EmissivityModel(magfield1, vel, bulkmodel, spec)
-
+        magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
+        material1 = EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2)
         geometry1 = Krang.ConeGeometry(π/2, )
-
         mesh1 = Krang.Mesh(geometry1, material1)
-        scene = Krang.Scene((mesh1, ))
+
+        magfield2 = Krang.SVector(-sin(ι) * cos(η), -sin(ι) * sin(η), cos(ι))
+        material2 = EmissivityModel(magfield2, vel, bulkmodel2, spec, rpeak, p1, p2)
+        geometry2 = Krang.ConeGeometry(π-θs*π/180, )
+        mesh2 = Krang.Mesh(geometry2, material2)
+
+        scene = Krang.Scene((mesh1, mesh2))
 
         new{typeof(θo), typeof(scene), typeof(metadata)}(Krang.Kerr(spin), θo, scene, metadata)
     end
@@ -59,25 +70,10 @@ function write_to_disk(θ)
     close(f)
 end
 Enzyme.EnzymeRules.inactive(::typeof(write_to_disk), args...) = nothing
-function bulk(θ, metadata)
-    (;c, σimg, rpeak, p1, p2) = θ
-    (;bulkimg, bulkflucs, bulkint) = metadata
-    #(;bulkgrid, bulkint) = metadata
-    rad = RadialDblPower(p1, p2-1)
 
-    mpr  = Comrade.modify(RingTemplate(rad, AzimuthalUniform()), Stretch(rpeak))
-    #bulkimg = intensitymap(mpr, bulkgrid)
-    intensitymap!(bulkimg, mpr)
-    #write_to_disk(θ)
-    #bulkimg .= [ComradeBase.intensity_point(mpr, (X=x, Y=y)) for x in bulkimg.X, y in bulkimg.Y]
-    #bulkflucs = σimg .* c.params
-    f  = flux(bulkimg)
-    for i in 1:length(bulkimg)
-        bulkimg[i] /= f
-        bulkflucs[i] = σimg * c.params[i]    
-    end
-    rast = apply_fluctuations(CenteredLR(), bulkimg, bulkflucs) 
-    return VLBISkyModels.InterpolatedImage(rast, bulkint)
+function bulk(c, σimg, bulkgrid, bulkint)
+    bulkimg = IntensityMap(σimg * c.params, bulkgrid)
+    return VLBISkyModels.InterpolatedImage(bulkimg, bulkint)
 end
 #TODO: Add a seperate GMRF for each cone
 

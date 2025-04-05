@@ -8,7 +8,7 @@ function JuKeBOX(θ::NamedTuple)
     (;
         spin,
         θo,
-        #θs,
+        θs,
         rpeak,
         p1,
         p2,
@@ -24,12 +24,21 @@ function JuKeBOX(θ::NamedTuple)
 
     subimgs = (0,1)
 
-    geometry1 = Krang.ConeGeometry(π/2)# θs*T(π/180))
+    #geometry1 = Krang.ConeGeometry(π-θs*π/180)# θs*T(π/180))
+    #material1 = Krang.ElectronSynchrotronPowerLawIntensity(magfield1..., vel..., spec, rpeak, p1, p2, subimgs)
+    #mesh1 = Krang.Mesh(geometry1, material1)
+
+    magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
     material1 = Krang.ElectronSynchrotronPowerLawIntensity(magfield1..., vel..., spec, rpeak, p1, p2, subimgs)
+    geometry1 = Krang.ConeGeometry(θs*π/180, )
     mesh1 = Krang.Mesh(geometry1, material1)
 
+    magfield2 = Krang.SVector(-sin(ι) * cos(η), -sin(ι) * sin(η), cos(ι))
+    material2 = Krang.ElectronSynchrotronPowerLawIntensity(magfield2..., vel..., spec, rpeak, p1, p2, subimgs)
+    geometry2 = Krang.ConeGeometry(π-θs*π/180, )
+    mesh2 = Krang.Mesh(geometry2, material2)
 
-    scene = Krang.Scene((mesh1, ))
+    scene = Krang.Scene((mesh1, mesh2))
 
     return JuKeBOX(
         spin,
