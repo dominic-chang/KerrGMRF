@@ -50,7 +50,7 @@ struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
 
         magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
         material1 = EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2)
-        geometry1 = Krang.ConeGeometry(π/2, )
+        geometry1 = Krang.ConeGeometry(θs*π/180, )
         mesh1 = Krang.Mesh(geometry1, material1)
 
         magfield2 = Krang.SVector(-sin(ι) * cos(η), -sin(ι) * sin(η), cos(ι))
@@ -73,7 +73,7 @@ Enzyme.EnzymeRules.inactive(::typeof(write_to_disk), args...) = nothing
 
 function bulk(c, σimg, bulkgrid, bulkint)
     bulkimg = IntensityMap(σimg * c.params, bulkgrid)
-    return VLBISkyModels.InterpolatedImage(bulkimg, bulkint)
+    return BicubicInterpolatedImage(bulkimg, bulkint)
 end
 #TODO: Add a seperate GMRF for each cone
 
