@@ -8,8 +8,8 @@ using Accessors
 import CairoMakie as CM
 using BasicInterpolators
 using FINUFFT
-Enzyme.API.printall!(true)
-Enzyme.API.printperf!(true)
+# Enzyme.API.printall!(true)
+# Enzyme.API.printperf!(true)
 
 rng = StableRNG(1234)
 
