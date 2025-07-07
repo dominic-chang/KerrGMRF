@@ -28,3 +28,6 @@ Manifest.toml
 
 # Weird files that MacOS creates
 .DS_Store
+Results*
+papers
+data

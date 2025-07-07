@@ -6,17 +6,19 @@ struct EmissivityModel{N, T, B} <: Krang.AbstractMaterial
     rpeak::T
     p1::T
     p2::T
+    m_d::T
+    raster_size::T
     subimgs::NTuple{N,Int}
-    
-    function EmissivityModel(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T) where {T, B}
-        new{1, T, B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, (0,))
+
+    function EmissivityModel(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T, m_d::T, raster_size::T) where {T, B}
+        new{2, T, B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, m_d, raster_size, (0,1))
     end
 end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
 @inline function (prof::EmissivityModel{N,T,B})(pix::Krang.AbstractPixel{T}, intersection) where {T,N,B}
-    (;magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2) = prof
+    (;m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size) = prof
     (;rs, ϕs, θs, νr, νθ) = intersection
 
     θo = Krang.inclination(pix)
@@ -25,14 +27,25 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
     norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
     
-    ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
-    dim = (X=rs*cos(ϕks), Y=rs*sin(ϕks))
+    rh = Krang.horizon(met)
+    rs_h = rs/rh
+    # grid has maximum radius of 30 units
+    rs_grid = (rs-rh) * rad2μas(m_d)/(raster_size - rh * rad2μas(m_d)) # convert to microarcseconds
+    if rs_grid < 0
+        return zero(T)
+    end
 
-    rat = (rs / rpeak)
-    cp = @inline ComradeBase.intensity_point(bulkmodel, dim)
+    ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
+    dim = (X=rs_grid*cos(ϕks)+0.10, Y=rs_grid*sin(ϕks)+0.10)
+    #dim = (X=rs_grid*cos(ϕks), Y=rs_grid*sin(ϕks))
+    rat = (rs_h / rpeak)
+    bulkpix = bulkmodel.img.X.len
+    cp = @inline ComradeBase.intensity_point(bulkmodel, dim)/(bulkpix^2) # total number of pixels
     ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index)* exp(cp)
+    ans = norm^(1 + spectral_index) * min(lp, 1e1) * ans
+    #ans *= (rs > 15 ? exp(-((rs -15))) : 1) 
     # Add a clamp to lp to help remove hot pixels
-    return norm^(1 + spectral_index) * min(lp, T(1e2)) * ans
+    return ans
 end
 
 struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
@@ -41,8 +54,8 @@ struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
     scene::S
     metadata::F
     function KerrGMRF(θ, metadata)
-        (;spin, θo, χ, ι, βv, spec, η, spec, rpeak, p1, p2, ρpr, νpr, c1) = θ
-        (;bulkgrid, transform1) = metadata
+        (;frac, m_d, spin, θo, χ, ι, βv, spec, η, spec, rpeak, p1, p2, ρpr, νpr, c1) = θ
+        (;bulkgrid, transform1, raster_size) = metadata
         A = typeof(θo)
         bulkint1 = transform1(c1, ρpr, νpr)         
         bulkmodel1 = bulk(bulkint1, θ.σimg, bulkgrid)
@@ -50,8 +63,8 @@ struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
         vel = Krang.SVector(βv, A(π / 2), χ)
 
         magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
-        material1 = EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2)
-        geometry1 = Krang.ConeGeometry(π/2, )
+        material1 = EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2, m_d, raster_size)
+        geometry1 = Krang.ConeGeometry(π/2, (;frac, ))
         mesh1 = Krang.Mesh(geometry1, material1)
 
         scene = Krang.Scene((mesh1, ))
@@ -79,7 +92,47 @@ function Comrade.intensity_point(m::KerrGMRF{A,S,F}, p) where {A, S, F}
 
     pix = Krang.SlowLightIntensityPixel(m.met, -X, Y, θo*A(π)/180)
     ans = render(pix,scene)
-    return ans #+ eps(A)
+    return ans #+ eps(A) 
 end
 
 
+@inline function Krang._raytrace(
+    observation,
+    pix::Krang.AbstractPixel,
+    mesh::Krang.Mesh{<:Krang.ConeGeometry{T,A},<:Krang.AbstractMaterial};
+    res,
+) where {T,A}
+    geometry = mesh.geometry
+    frac = geometry.attributes.frac
+    material = mesh.material
+    θs = geometry.opening_angle
+    subimgs = material.subimgs
+
+    isindir = false
+    for _ = 1:2 # Looping over isindir this way is needed to get Metal to work
+        isindir ⊻= true
+        for n in subimgs
+            #νθ = cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n % 2 == 1) : !isindir
+            intersection, issuccess = if Krang.isFastLight(material)
+                if Krang.isAxisymmetric(material)
+                    rs, νr, νθ, _, issuccess = @inline emission_radius(pix, θs, isindir, n)
+                    Krang.Intersection(zero(rs), rs, θs, zero(rs), νr, νθ), issuccess
+                else
+                    rs, ϕs, νr, νθ, issuccess =
+                        @inline emission_coordinates_fast_light(pix, θs, isindir, n)
+                    Krang.Intersection(zero(rs), rs, θs, ϕs, νr, νθ), issuccess
+                end
+            else
+                ts, rs, ϕs, νr, νθ, issuccess =
+                    @inline emission_coordinates(pix, θs, isindir, n)
+                Krang.Intersection(ts, rs, θs, ϕs, νr, νθ), issuccess
+            end
+
+            if issuccess && (Krang.horizon(Krang.metric(pix)) < rs < T(Inf))
+                observation += @inline(material(pix, intersection))*frac^n
+            end
+        end
+    end
+
+    return observation
+end
