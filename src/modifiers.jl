@@ -23,9 +23,6 @@ function ComradeBase.intensity_point(m::BicubicInterpolatedImage, p)
     g = axisdims(m.img)
     dx, dy = pixelsizes(g)
     X, Y = g.X, g.Y
-    # rm = rotmat(g)'
-    # X2 = VLBISkyModels._rotatex(p.X, p.Y, rm)
-    # Y2 = VLBISkyModels._rotatey(p.X, p.Y, rm)
     (X[begin] > p.X || p.X > X[end]) && return zero(eltype(m.img))
     (Y[begin] > p.Y || p.Y > Y[end]) && return zero(eltype(m.img))
     return (m.itp(p.X, p.Y))*inv(dx * dy)
@@ -64,7 +61,6 @@ end
 function ComradeBase.intensitymap_analytic!(img::IntensityMap, m::RenormalizedFlux)
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    #println(size(pimg))
     pimg .*= flux(m) ./sum(pimg)
     return nothing
 end
@@ -76,7 +72,6 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D,S}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    #println(size(pimg))
     pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
@@ -87,7 +82,6 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    #println(size(pimg))
     pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
@@ -98,13 +92,6 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
-    #println(size(pimg))
     pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
-
-struct ProductModel{M1, M2} <: VLBISkyModels.CompositeModel{M1, M2}
-    m1::M1
-    m2::M2
-end
-#
