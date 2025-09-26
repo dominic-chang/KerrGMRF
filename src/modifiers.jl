@@ -50,10 +50,6 @@ end
 end
 
 
-
-
-
-
 struct RenormalizedFlux{M, T} <: ComradeBase.AbstractModel
     model::M
     flux::T
@@ -68,6 +64,7 @@ end
 function ComradeBase.intensitymap_analytic!(img::IntensityMap, m::RenormalizedFlux)
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
+    #println(size(pimg))
     pimg .*= flux(m) ./sum(pimg)
     return nothing
 end
@@ -79,6 +76,7 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D,S}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
+    #println(size(pimg))
     pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
@@ -89,6 +87,7 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
+    #println(size(pimg))
     pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
@@ -99,9 +98,13 @@ function ComradeBase.intensitymap_analytic!(img::IntensityMap{T,N,D,
                                 m::RenormalizedFlux) where {T,N,D}
     ComradeBase.intensitymap_analytic!(img, m.model)
     pimg = baseimage(img)
+    #println(size(pimg))
     pimg .*= flux(m) ./ sum(pimg)
     return nothing
 end
 
-
-
+struct ProductModel{M1, M2} <: VLBISkyModels.CompositeModel{M1, M2}
+    m1::M1
+    m2::M2
+end
+#
