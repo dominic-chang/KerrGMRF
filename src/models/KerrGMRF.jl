@@ -18,7 +18,7 @@ end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
-@inline function (prof::EmissivityModel{N, T, B})(pix::Krang.AbstractPixel, intersection; n = 0) where {T, N, B}
+@inline function (prof::EmissivityModel{N, B})(pix::Krang.AbstractPixel, intersection; n = 0) where {N, B}
 	(; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof
 	(; rs, ϕs, θs, νr, νθ) = intersection
 
@@ -28,21 +28,22 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
 	norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
 
-	rs_h = rs
+	rh = Krang.horizon(met)
+	rs_h = rs # / rh
 	# grid has maximum radius of 30 units
-	rs_grid = (rs) / (raster_size) # convert to microarcseconds
-	if rs_grid < 0 || rs <= horizon(met)
+	rs_grid = (rs - rh) * rad2μas(m_d) / (raster_size - rh * rad2μas(m_d)) # convert to microarcseconds
+	if rs_grid < 0
 		return zero(T)
 	end
 
 	ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
-	dim = (X = rs_grid*cos(ϕks)+offset, Y = rs_grid*sin(ϕks)+offset)
+	dim = (X = rs_grid * cos(ϕks) + offset, Y = rs_grid * sin(ϕks) + offset)
 	rat = (rs_h / rpeak)
 
 	bulkpix = bulkmodel.img.X.len
-	cp = n == 0 ? exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2)) : 1.0  # the pixel area is 1/(bulkpix^2)
+	cp = exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2))
 	ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index) * cp
-	ans = norm^(1 + spectral_index) * min(lp, 1e1) * ans
+	ans = norm^(1 + spectral_index) * min(lp, 1e2) * ans
 	# Add a clamp to lp to help remove hot pixels
 	return ans
 end
@@ -53,13 +54,13 @@ struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
 	scene::S
 	metadata::F
 	function KerrGMRF(θ, metadata)
-		(; frac, m_d, spin, θs, θo, χ, ι, βv, spec, η, spec, rpeak, p1, p2, ρpr, νpr, c1) = θ
+		(; frac, m_d, spin, θs, θo, χ, ι, βv, spec, η, spec, rpeak, p1, p2, ρpr, νpr, c1, c2) = θ
 		(; bulkgrid, transform1, transform2, raster_size, offset) = metadata
 		A = typeof(θo)
 		bulkint1 = transform1(c1, ρpr, νpr)
 		bulkmodel1 = bulk(bulkint1, θ.σimg, bulkgrid)
 
-		bulkint2 = transform2(c1, ρpr, νpr)
+		bulkint2 = transform2(c2, ρpr, νpr)
 		bulkmodel2 = bulk(bulkint2, θ.σimg, bulkgrid)
 
 		vel = Krang.SVector(βv, A(π / 2), χ)
@@ -99,7 +100,7 @@ function Comrade.intensity_point(m::KerrGMRF{A, S, F}, p) where {A, S, F}
 
 	pix = Krang.SlowLightIntensityPixel(m.met, -X, Y, θo * A(π) / 180)
 	ans = render(pix, scene)
-	return ans 
+	return ans
 end
 
 
@@ -110,21 +111,19 @@ end
 	res,
 ) where {T, A}
 	geometry = mesh.geometry
-	frac = geometry.attributes.frac
 	material = mesh.material
 	θs = geometry.opening_angle
 	subimgs = material.subimgs
 
-	isindir = false
-	for _ in 1:2 # Looping over isindir this way is needed to get Metal to work
-		isindir ⊻= true
-		for n in subimgs
+
+	for n in subimgs
+		for isindir in (true, false)
 			#νθ = cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n % 2 == 1) : !isindir
 			rs, ϕs, νr, νθ, issuccess = @inline emission_coordinates_fast_light(pix, θs, isindir, n)
-			intersection = Krang.Intersection(zero(T), rs, θs, ϕs, νr, νθ)
+			intersection = Krang.Intersection(zero(rs), rs, θs, ϕs, νr, νθ)
 
 			if issuccess && (Krang.horizon(Krang.metric(pix)) < rs < T(Inf))
-				observation += (@inline material(pix, intersection))#,n = n))# * (frac ^ n)
+				observation += (@inline material(pix, intersection, n = n))# * (frac ^ n)
 			end
 		end
 	end

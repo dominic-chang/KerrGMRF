@@ -16,7 +16,7 @@ rng = StableRNG(1234)
 include(joinpath(dirname(@__DIR__), "utils.jl"))
 include(joinpath(dirname(@__DIR__), "plotting", "utils.jl"))
 include(joinpath(dirname(@__DIR__), "modifiers.jl"))
-include(joinpath(dirname(@__DIR__), "models", "KerrGMRF2.jl"))
+include(joinpath(dirname(@__DIR__), "models", "KerrGMRF.jl"))
 
 lr = 0.1
 seed = 1234
