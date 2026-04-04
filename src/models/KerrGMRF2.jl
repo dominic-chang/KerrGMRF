@@ -18,7 +18,7 @@ end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
-@inline function (prof::EmissivityModel{N, T, B})(pix::Krang.AbstractPixel{T}, intersection; n = 0) where {T, N, B}
+@inline function (prof::EmissivityModel{N, B})(pix::Krang.AbstractPixel, intersection; n = 0) where {N, B}
 	(; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof
 	(; rs, ϕs, θs, νr, νθ) = intersection
 

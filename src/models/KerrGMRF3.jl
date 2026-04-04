@@ -18,7 +18,7 @@ end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
-@inline function (prof::EmissivityModel{N, T, B})(pix::Krang.AbstractPixel{T}, intersection; n = 0) where {T, N, B}
+@inline function (prof::EmissivityModel{N, B})(pix::Krang.AbstractPixel, intersection; n = 0) where {N, B}
 	(; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof
 	(; rs, ϕs, θs, νr, νθ) = intersection
 
@@ -38,14 +38,11 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
 	ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
 	dim = (X = rs_grid * cos(ϕks) + offset, Y = rs_grid * sin(ϕks) + offset)
-	#dim = (X=rs_grid*cos(ϕks), Y=rs_grid*sin(ϕks))
 	rat = (rs_h / rpeak)
 
 	bulkpix = bulkmodel.img.X.len
 	cp = n == 0 ? exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2)) : 1.0  # the pixel area is 1/(bulkpix^2)
-	#cp = exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2))
 	ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index) * cp
-	#ans = norm^(1 + spectral_index) * min(lp, 1e2) * ans
 	ans = norm^(1 + spectral_index) * min(lp, 1e2) * ans
 	# Add a clamp to lp to help remove hot pixels
 	return ans

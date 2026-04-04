@@ -25,13 +25,14 @@ end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
-@inline function (prof::EmissivityModel)(pix::Krang.AbstractPixel{T}, intersection) where {T}
+@inline function (prof::EmissivityModel)(pix::Krang.AbstractPixel, intersection::Krang.Intersection) 
 	(; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof.model
 	(; rs, ϕs, θs, νr, νθ) = intersection
 
 	θo = Krang.inclination(pix)
 	met = Krang.metric(pix)
 	α, β = @inline Krang.screen_coordinate(pix)
+    T = typeof(met.spin)
 
 	norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
 
@@ -108,23 +109,24 @@ end
 	(; met, scene_n0, θo) = m.model
 
 	pix = Krang.SlowLightIntensityPixel(met, -X, Y, θo * π / 180.)
-	return render(pix, scene_n0)
+	return _render(pix, scene_n0)
 end
+
 @inline function intensity_point_and_mask(m::N1_wrapper, p) 
 	(; X, Y) = p
 	(; met, scene_n1, θo) = m.model
 
 	pix = Krang.SlowLightIntensityPixel(met, -X, Y, θo * π / 180.)
-	return render(pix, scene_n1)
+	return _render(pix, scene_n1)[1]
 end
 
 
-function Comrade.ComradeBase.intensitymap(
-        s::M,
-        dims::Comrade.AbstractDomain
-    ) where {M <: Comrade.AbstractModel}
-    return Comrade.ComradeBase.create_imgmap(Comrade.intensitymap(Comrade.imanalytic(M), s, dims), dims)
-end
+#function Comrade.ComradeBase.intensitymap(
+#        s::M,
+#        dims::Comrade.AbstractDomain
+#    ) where {M <: Comrade.AbstractModel}
+#    return Comrade.ComradeBase.create_imgmap(Comrade.intensitymap(Comrade.imanalytic(M), s, dims), dims)
+#end
 
 function transform_intensitymap(model, transform::Shift, img)
     (;Δx, Δy) = transform
@@ -207,16 +209,16 @@ function custom_intmap_n0!(img::IntensityMap, mask, m)
     bimg = baseimage(img)
 
 	m_n0 = N0_wrapper(m)
-	sub_g = @view g[begin:2:end, begin:2:end]
-	sub_bimg = @view bimg[begin:2:end, begin:2:end]
-	sub_mask = @view mask[begin:2:end, begin:2:end]
-    Threads.@threads :dynamic for I in eachindex(sub_g, sub_bimg)
+	sub_g = @view g[begin:4:end, begin:4:end]
+	sub_bimg = @view bimg[begin:4:end, begin:4:end]
+	sub_mask = @view mask[begin:4:end, begin:4:end]
+    Threads.@threads for I in eachindex(sub_g, sub_bimg)
 		tempimg, tempmax = intensity_point_and_mask(m_n0, sub_g[I])
         sub_bimg[I], sub_mask[I] =  tempimg * dx * dy, tempmax>0
     end
-	interpolated_data = BicubicInterpolator(grids.X[begin:2:end], grids.Y[begin:2:end], sub_bimg, NoBoundaries())
-	interpolated_mask = BicubicInterpolator(grids.X[begin:2:end], grids.Y[begin:2:end], sub_mask, NoBoundaries())
-	Threads.@threads :dynamic for I in eachindex(g, bimg)
+	interpolated_data = BicubicInterpolator(grids.X[begin:4:end], grids.Y[begin:4:end], sub_bimg, NoBoundaries())
+	interpolated_mask = BicubicInterpolator(grids.X[begin:4:end], grids.Y[begin:4:end], sub_mask, NoBoundaries())
+	Threads.@threads for I in eachindex(g, bimg)
         bimg[I] = interpolated_data(g[I]...)
 		mask[I] = interpolated_mask(g[I]...) > 0.0
     end
@@ -232,8 +234,8 @@ function custom_intmap_n1!(img::IntensityMap, mask, m)
 	m_n1 = N1_wrapper(m)
 	sub_g = @view g[mask]
 	sub_bimg = @view bimg[mask]
-    Threads.@threads :dynamic for I in eachindex(sub_g, sub_bimg)
-		temp, _ =intensity_point_and_mask(m_n1, sub_g[I])
+    Threads.@threads for I in eachindex(sub_g, sub_bimg)
+		temp = intensity_point_and_mask(m_n1, sub_g[I])
         sub_bimg[I] +=  temp * dx * dy
     end
 
@@ -242,9 +244,9 @@ end
 
 function Comrade.ComradeBase.intensitymap_numeric!(img::Comrade.IntensityMap, m::KerrGMRF)
 	mask = zeros(Bool, size(img))
-    custom_intmap_n0!(img, mask, m) 
-	custom_intmap_n1!(img, mask, m) 
-    return nothing 
+    @inline custom_intmap_n0!(img, mask, m) 
+	@inline custom_intmap_n1!(img, mask, m) 
+    return img 
 end
 
 function Comrade.ComradeBase.visibilitymap_numeric(m::Comrade.VLBISkyModels.ModifiedModel, grid::Comrade.VLBISkyModels.AbstractFourierDualDomain)
@@ -254,12 +256,47 @@ function Comrade.ComradeBase.visibilitymap_numeric(m::Comrade.VLBISkyModels.Modi
     return vis
 end
 
-@inline function Krang._raytrace(
-    observation,
+@inline function Krang.emission_coordinates_fast_light(
+    pix::Krang.AbstractPixel,
+    θs::T,
+    isindir,
+    n,
+) where {T}
+    # NB: I do not return θs since it is already known, and returning it might encourage bad coding errors
+    α, β = Krang.screen_coordinate(pix)
+    θo = Krang.inclination(pix)
+    met = Krang.metric(pix)
+    isincone = θo ≤ θs ≤ (π - θo) || (π - θo) ≤ θs ≤ θo
+    err_return = (zero(T), zero(T), false, false, false, 0.0)
+    if !isincone
+        αmin = Krang.αboundary(met, θs)
+        βbound = (abs(α) >= (αmin + eps(T)) ? Krang.βboundary(met, α, θo, θs) : zero(T))
+        ((abs(β) + eps(T)) < βbound) && return err_return
+    end
+
+    τ, Gs, Go, Ghat, isvortical, issuccess = @inline Krang.Gθ(pix, θs, isindir, n)
+    issuccess || return err_return
+
+    nmax = floor((Krang.total_mino_time(pix) - τ)/Ghat)
+    # is θ̇s increasing or decreasing?
+    νθ = isincone ? (θo > θs) ⊻ (n % 2 == 1) : !isindir
+    if isincone
+        νθ = (θo > θs) ⊻ (n % 2 == 1)
+    end
+
+    rs, νr, _, issuccess = Krang.emission_radius(pix, τ)
+    issuccess || return err_return
+
+    ϕs = @inline Krang.emission_azimuth(pix, θs, rs, τ, νr, isindir, n)
+
+    return rs, ϕs, νr, νθ, issuccess, nmax
+end
+
+@inline function _raytrace(
     pix::Krang.AbstractPixel,
     mesh::Krang.Mesh{<:Krang.ConeGeometry{T,A},<:Krang.AbstractMaterial};
-    res,
 ) where {T,A}
+    observation = 0.0
     geometry = mesh.geometry
     material = mesh.material
     θs = geometry.opening_angle
@@ -283,15 +320,15 @@ end
     return observation, nmax
 end
 
-
-
-#function Comrade.visibilitymap_numeric!(vis::Comrade.IntensityMap, m::Comrade.AbstractModel)
-#    grid = Comrade.axisdims(vis)
-#    gridxy = VLBISkyModels.xygrid(grid)
-#    img = Comrade.allocate_imgmap(m, gridxy)
-#    Comrade.intensitymap!(img, m)
-#    tildeI = _fft(parent(img))
-#    copyto!(baseimage(vis), Comrade.fftshift(tildeI, 1:2))
-#    Comrade.phasecenter!(vis, gridxy, grid)
-#    return nothing
-#end
+@inline function _render(pixel::Krang.AbstractPixel, scene::Krang.Scene) 
+    observation = 0.0
+    mesh = scene[1]
+    nmax = 0.0
+    for itr = 1:length(scene)
+        mesh = scene[itr]
+        temp, ntemp = @inline _raytrace(pixel, mesh)
+        observation += temp
+        nmax = max(nmax, ntemp)
+    end
+    return observation, nmax
+end
