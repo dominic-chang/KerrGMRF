@@ -32,5 +32,6 @@ Results*
 papers
 data
 results
-
 *.pdf
+err.txt
+out.txt
