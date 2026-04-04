@@ -42,8 +42,8 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 	rat = (rs_h / rpeak)
 
 	bulkpix = bulkmodel.img.X.len
-	#cp = n == 0 ? exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2)) : 1.0  # the pixel area is 1/(bulkpix^2)
-	cp = exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2))
+	cp = n == 0 ? exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2)) : 1.0  # the pixel area is 1/(bulkpix^2)
+	#cp = exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2))
 	ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index) * cp
 	#ans = norm^(1 + spectral_index) * min(lp, 1e2) * ans
 	ans = norm^(1 + spectral_index) * min(lp, 1e2) * ans

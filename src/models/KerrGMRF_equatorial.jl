@@ -8,17 +8,18 @@ struct EmissivityModel{N,T,B} <: Krang.AbstractMaterial
     p2::T
     m_d::T
     raster_size::T
+    offset::T
     subimgs::NTuple{N,Int}
 
-    function EmissivityModel(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T, m_d::T, raster_size::T) where {T,B}
-        new{2,T,B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, m_d, raster_size, (0, 1))
+    function EmissivityModel(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T, m_d::T, raster_size::T,offset::T) where {T,B}
+        new{2,T,B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, m_d, raster_size, offset, (0, 1))
     end
 end
 Krang.isFastLight(material::EmissivityModel) = true
 Krang.isAxisymmetric(material::EmissivityModel) = false
 
-@inline function (prof::EmissivityModel{N,T,B})(pix::Krang.AbstractPixel{T}, intersection) where {T,N,B}
-    (; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size) = prof
+@inline function (prof::EmissivityModel{N,T,B})(pix::Krang.AbstractPixel{T}, intersection; n=0) where {T,N,B}
+    (; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof
     (; rs, ϕs, θs, νr, νθ) = intersection
 
     θo = Krang.inclination(pix)
@@ -27,20 +28,34 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
     norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
 
+    rh = Krang.horizon(met)
+    #rs_h = rs #/ rh
+    ## grid has maximum radius of 30 units
+    #rs_grid = (rs - rh) * rad2μas(m_d) / (raster_size - rh * rad2μas(m_d)) # convert to microarcseconds
+    #if rs_grid < 0
+    #    return zero(T)
+    #end
+
+    #ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
+    #dim = (X=rs_grid * cos(ϕks) + offset, Y=rs_grid * sin(ϕks) + offset)
+    ##dim = (X=rs_grid*cos(ϕks), Y=rs_grid*sin(ϕks))
+    #rat = (rs_h / rpeak)
+
     rs_h = rs
     # grid has maximum radius of 30 units
     rs_grid = (rs) / (raster_size) # convert to microarcseconds
-    if rs_grid < 0
+    if rs_grid < 0 || rs <= horizon(met)
         return zero(T)
     end
 
     ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
-    dim = (X=rs_grid*cos(ϕks), Y=rs_grid*sin(ϕks))
+    dim = (X=rs_grid*cos(ϕks)+offset, Y=rs_grid*sin(ϕks)+offset)
     rat = (rs_h / rpeak)
 
     bulkpix = bulkmodel.img.X.len
-    cp = ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2) # the pixel area is 1/(bulkpix^2)
-    ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index) * exp(cp)
+    cp = n == 0 ? exp(ComradeBase.intensity_point(bulkmodel, dim)/ (bulkpix^2))  : 1.0  # the pixel area is 1/(bulkpix^2)
+    #cp = exp(ComradeBase.intensity_point(bulkmodel, dim)/ (bulkpix^2))
+    ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index) * cp
     ans = norm^(1 + spectral_index) * min(lp, 1e1) * ans
     # Add a clamp to lp to help remove hot pixels
     return ans
@@ -53,7 +68,7 @@ struct KerrGMRF{A,S,F} <: ComradeBase.AbstractModel
     metadata::F
     function KerrGMRF(θ, metadata)
         (; frac, m_d, spin, θs, θo, χ, ι, βv, spec, η, spec, rpeak, p1, p2, ρpr, νpr, c1) = θ
-        (; bulkgrid, transform1, raster_size) = metadata
+        (; bulkgrid, transform1, raster_size, offset) = metadata
         A = typeof(θo)
         bulkint1 = transform1(c1, ρpr, νpr)
         bulkmodel1 = bulk(bulkint1, θ.σimg, bulkgrid)
@@ -61,7 +76,7 @@ struct KerrGMRF{A,S,F} <: ComradeBase.AbstractModel
         vel = Krang.SVector(βv, A(π / 2), χ)
 
         magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
-        material1 = EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2, m_d, raster_size)
+        material1 = EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2, m_d, raster_size, offset)
         geometry1 = Krang.ConeGeometry(θs * π / 180, (; frac,))
         mesh1 = Krang.Mesh(geometry1, material1)
 
@@ -115,10 +130,34 @@ end
             intersection = Krang.Intersection(zero(rs), rs, θs, ϕs, νr, νθ)
 
             if issuccess && (Krang.horizon(Krang.metric(pix)) < rs < T(Inf))
-                observation += (@inline material(pix, intersection)) * (frac ^n)
+                observation += (@inline material(pix, intersection;n=n)) * (frac ^n)
             end
         end
     end
-
+    
     return observation
+end
+
+function (linpol::Krang.ElectronSynchrotronPowerLawIntensity{N,T})(
+    pix::Krang.AbstractPixel,
+    intersection;
+    n=0
+) where {N,T}
+    (; magnetic_field, fluid_velocity, R, p1, p2, spectral_index) = linpol
+    (; rs, θs, νr, νθ) = intersection
+
+    θo = Krang.inclination(pix)
+    met = Krang.metric(pix)
+    α, β = Krang.screen_coordinate(pix)
+
+
+    norm, redshift, lp =
+        Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
+
+
+    rat = (rs / R)
+    prof = rat^p1 / (one(T) + rat^(p1 + p2)) * redshift^(T(3) + spectral_index)
+
+    # Add a clamp to lp to help remove hot pixels
+    return norm^(one(T) + spectral_index) * min(lp, T(1e2)) * prof
 end
