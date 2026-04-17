@@ -117,6 +117,7 @@ end
 
 function loss(θ, fpost, metadata, inimg)
 	psample = Comrade.transform(fpost, θ).sky
+	grid = fpost.lpost.skymodel.grid
 	mse(inimg, intensitymap(ModifiedKerrGMRF(psample, metadata), grid))
 end
 
