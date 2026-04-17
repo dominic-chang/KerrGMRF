@@ -9,8 +9,8 @@ mutable struct Callback
     loss_arr::Vector
 	const f::Function
 end
+Callback(stride, fpost, f) = Callback(0, stride, fpost, Float64[], f)
 
-Callback(stride, fpost, loss_arr, f) = Callback(0, stride, fpost, loss_arr, f)
 function (c::Callback)(state, loss, others...)
     fpost = c.fpost
     metadata = fpost.lpost.skymodel.metadata

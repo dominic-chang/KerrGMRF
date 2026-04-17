@@ -1,34 +1,22 @@
+using Pkg;Pkg.activate(dirname(dirname(@__DIR__)));
 using VIDA
-using Krang
-using CairoMakie
-using LaTeXStrings
 using Comrade
+using Krang
 using VLBIImagePriors
-using Enzyme
 using BasicInterpolators
-using Images
-using Accessors
-using ImageIO
-using FileIO
-using Optimization
-using OptimizationOptimisers
 using Enzyme
+using Optimization, OptimizationOptimisers, OptimizationOptimJL, Optim
 using StableRNGs
-using Plots: Plots
-using LaTeXStrings
 using Distributions, DistributionsAD
 using Pyehtim
 import CairoMakie as CM
+using LaTeXStrings
 using Accessors
-using Optimization
-using OptimizationOptimisers
-using OptimizationOptimJL
-using Optim
 
-include(joinpath((@__DIR__), "utils.jl"))
-include(joinpath((@__DIR__), "plotting", "utils.jl"))
-include(joinpath((@__DIR__), "modifiers.jl"))
-include(joinpath((@__DIR__), "models", "KerrGMRF.jl"))
+include(joinpath(dirname(@__DIR__), "utils.jl"))
+include(joinpath(dirname(@__DIR__), "plotting", "utils.jl"))
+include(joinpath(dirname(@__DIR__), "modifiers.jl"))
+include(joinpath(dirname(@__DIR__), "models", "KerrGMRF.jl"))
 
 curr_theme = CM.Theme(
 	Axis = (
@@ -38,23 +26,6 @@ curr_theme = CM.Theme(
 		yspinesvisible = false,
 		yticklabelsvisible = false,
 		yticksvisible = false,
-	),
-	Axis3 = (
-		xgridvisible = false,
-		ygridvisible = false,
-		zgridvisible = false,
-		xspinesvisible = false,
-		yspinesvisible = false,
-		zspinesvisible = false,
-		xticklabelsvisible = false,
-		yticklabelsvisible = false,
-		zticklabelsvisible = false,
-		xticksvisible = false,
-		yticksvisible = false,
-		zticksvisible = false,
-		xlabelvisible = false,
-		ylabelvisible = false,
-		zlabelvisible = false,
 	),
 	Text = (fontsize = 40,),
 	Colorbar = (
@@ -69,44 +40,12 @@ curr_theme = CM.Theme(
 		rasterize = true,
 	),
 	Imageviz = (colormap=:inferno),
-	#backgroundcolor = GLMk.colorant"rgba(10%, 10%, 10%, 1.0)"
 )
-
 CM.set_theme!(merge(curr_theme, CM.theme_latexfonts()))
 
 function ModifiedKerrGMRF(θ2, meta)
 	m = Comrade.modify(KerrGMRF(θ2, meta), Stretch((θ2.m_d), (θ2.m_d)), Rotate(θ2.pa))#, Shift(θ2.x, θ2.y))
 	return RenormalizedFlux(m, θ2.f)
-end
-
-function sample_prior(prior)
-	arr = Vector{Float64}()
-	for i in prior
-		temp = rand(i)
-		if temp isa Vector
-			arr = hcat(arr, temp)
-		else
-			append!(arr, temp)
-		end
-	end
-	return arr
-end
-
-function prior_to_named_tuple(sample, prior)
-	vals = []
-	marker = 1
-	for i in prior
-		if length(findall(x->x==:dims, fieldnames(typeof(i)))) > 0
-			dms = i.dims
-			rng = reduce(*, dms)
-			append!(vals, [reshape(sample[marker:(marker+rng-1)], dms)])
-			marker += rng
-		else
-			append!(vals, sample[marker])
-			marker += 1
-		end
-	end
-	return NamedTuple{keys(prior)}(vals)
 end
 
 function mse(img, img2)
@@ -140,11 +79,10 @@ snrcut = 3.0
 year = 2017
 
 data = Dict(2017=>"SR1_M87_2017_095_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V1_M87_2018_111_b3_hops_netcal_10s_StokesI.uvfits", "bhex" => "frame0008_230.5_GHz_synthdata_ngEHTsim.uvfits")
-path = joinpath(dirname(@__DIR__), "data", data[year])
+path = joinpath(dirname(dirname(@__DIR__)), "data", data[year])
 files = "/n/holylabs/doeleman_lab/Users/dochang/GRMHDImages/snapshots"
 filenames = filter(file->occursin("_160_", file), readdir(files))
-for fname in filenames[151:end]
-
+for fname in filenames[99:end]
 
 	img_path = joinpath(files, fname)
 
@@ -155,44 +93,39 @@ for fname in filenames[151:end]
 	fovx, fovy = fieldofview(inimg)
 
 	imageviz(inimg, colorscale = log10, colorrange = (1e-6, 1e-3), colormap = :inferno) |> display
-	nx = NxCorr(inimg)
 
-	bulkgrid            = imagepixels(bulkx, bulky, bulkpix, bulkpix; executor = Serial())
+	bulkgrid = imagepixels(bulkx, bulky, bulkpix, bulkpix; executor = Serial())
 	transform1, cprior1 = matern(size(bulkgrid))
 	transform2, cprior2 = matern(size(bulkgrid))
-	prior               = (
-	m_d = Uniform(μas2rad(1.0), μas2rad(8.0)),
-	spin = Uniform(0.01, 0.99),
-	θo = Uniform(120.0, 179.0),
-	θs = Uniform(20, 90.0),
-	rpeak = Uniform(1.0, 8.0),
-	p1 = Uniform(0.1, 5.0),
-	p2 = Uniform(0.1, 5.0),
-	χ = VLBIImagePriors.DiagonalVonMises(0, inv(π^2)),
-	ι = Uniform(-π/2, π/2),
-	βv = Uniform(0.01, 0.99),
-	spec = Uniform(-1.0, 5.0),
-	η = VLBIImagePriors.DiagonalVonMises(0, inv(π^2)),
-	frac = VLBIImagePriors.DeltaDist(1.0),
-	pa = VLBIImagePriors.DeltaDist(108.0*π/180),
-	f = VLBIImagePriors.DeltaDist(1.0),
-	σimg = truncated(Normal(0.0, 1.0); lower = 0.0),
-	ρpr = truncated(InverseGamma(1.0, -log(0.1)*10); lower = 1.0, upper = 2*max(size(bulkgrid)...)),
-	νpr = Uniform(1.0, 5.0),
-	c1 = cprior1,
-	c2 = cprior2
-)
-	offset              = 0.0
-	metadata            = (; bulkgrid, transform1, transform2, raster_size, offset)
-	obsin               = (ehtim.obsdata.load_uvfits(path) |> scan_average).flag_uvdist(uv_min = 0.1e9).add_fractional_noise(fractional_noise)
-	ehtimg              = ehtim.image.load_image(img_path).rotate(108*π/180)
-	ehtimg.ivec.shape
-	ehtimg.rf = obsin.rf
-	ehtimg.ra = obsin.ra
-	ehtimg.dec = obsin.dec
-	ehtimg.mjd = 57848
-	obs = ehtimg.observe_same(obsin, ampcal = ampcal, phasecal = phasecal, add_th_noise = add_th_noise, seed = seed, ttype = "fast")
-	obs = scan_average(obs.flag_uvdist(uv_min = 0.1e9))
+	prior = (
+		m_d = Uniform(μas2rad(1.0), μas2rad(8.0)),
+		spin = Uniform(0.01, 0.99),
+		θo = Uniform(120.0, 179.0),
+		θs = Uniform(20, 90.0),
+		rpeak = Uniform(1.0, 8.0),
+		p1 = Uniform(0.1, 5.0),
+		p2 = Uniform(0.1, 5.0),
+		χ = VLBIImagePriors.DiagonalVonMises(0, inv(π^2)),
+		ι = Uniform(-π/2, π/2),
+		βv = Uniform(0.01, 0.99),
+		spec = Uniform(-1.0, 5.0),
+		η = VLBIImagePriors.DiagonalVonMises(0, inv(π^2)),
+		frac = VLBIImagePriors.DeltaDist(1.0),
+		pa = VLBIImagePriors.DeltaDist(108.0*π/180),
+		f = VLBIImagePriors.DeltaDist(1.0),
+		σimg = truncated(Normal(0.0, 1.0); lower = 0.0),
+		ρpr = truncated(InverseGamma(1.0, -log(0.1)*10); lower = 1.0, upper = 2*max(size(bulkgrid)...)),
+		νpr = Uniform(1.0, 5.0),
+		c1 = cprior1,
+		c2 = cprior2,
+	)
+	offset = 0.0
+	metadata = (; bulkgrid, transform1, transform2, raster_size, offset)
+	obsin = (ehtim.obsdata.load_uvfits(path) |> scan_average).flag_uvdist(uv_min = 0.1e9).add_fractional_noise(fractional_noise)
+	ehtimg = ehtim.image.load_image(img_path).rotate(108*π/180)
+	ehtimg.rf, ehtimg.ra, ehtimg.dec, ehtimg.mjd = obsin.rf, obsin.ra, obsin.dec, 57848
+
+	obs = scan_average(ehtimg.observe_same(obsin, ampcal = ampcal, phasecal = phasecal, add_th_noise = add_th_noise, seed = seed, ttype = "fast"))
 	dvis, dvisamp, dcphase, dlcamp = extract_table(obs, Visibilities(), VisibilityAmplitudes(), ClosurePhases(; snrcut = 3.0), LogClosureAmplitudes(; snrcut = 3.0))
 	skym = SkyModel(
 		ModifiedKerrGMRF,
@@ -202,13 +135,8 @@ for fname in filenames[151:end]
 	)
 	post = VLBIPosterior(skym, Comrade.IdealInstrumentModel(), dlcamp, dcphase; admode = set_runtime_activity(Enzyme.Reverse))
 	fpost = Comrade.asflat(post)
-	grid = imagepixels(fovx, fovy, npix, npix; executor = ThreadsEx())
-	psample = prior_to_named_tuple(sample_prior(prior), prior)
-	inimg2 = intensitymap(ModifiedKerrGMRF(psample, metadata), grid)
-	inimg
 
 	t = (; fpost, metadata, inimg)
-
 	curr =
 		tsol = (
 			sky = (
@@ -246,18 +174,18 @@ for fname in filenames[151:end]
 			return Comrade.inverse(fpost, outvals)
 		end)(post)
 		xvals = Comrade.transform(fpost, vals)
-		intensitymap(ModifiedKerrGMRF(xvals.sky, metadata), grid) |> imageviz
+		intensitymap(ModifiedKerrGMRF(xvals.sky, metadata), skym.grid) |> imageviz
 		optf = OptimizationFunction(f, AutoEnzyme(; mode = Enzyme.set_runtime_activity(Enzyme.Reverse)))
 		dvals = similar(vals)
 		prob = OptimizationProblem(optf, vals, t)
 
 		#sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 100, callback = Callback(5, ()->nothing))
-		sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 50, callback = Callback(5, fpost, [], ()->nothing))
+		sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 50, callback = Callback(5, fpost, ()->nothing))
 
 		tsol = Comrade.transform(fpost, sol.u)
 
-		joinpath((@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
-		fpath = open(joinpath((@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "w")
+		joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
+		fpath = open(joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "w")
 		write(fpath, "best_fit = " * string(tsol))
 		close(fpath)
 	end
@@ -278,15 +206,14 @@ for fname in filenames[151:end]
 		return Comrade.inverse(fpost, outvals)
 	end)(post)
 	xvals = Comrade.transform(fpost, vals)
-	intensitymap(ModifiedKerrGMRF(xvals.sky, metadata), grid) |> imageviz
 	optf = OptimizationFunction(f, AutoEnzyme(; mode = Enzyme.set_runtime_activity(Enzyme.Reverse)))
 	dvals = similar(vals)
 	prob = OptimizationProblem(optf, vals, t)
 	sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 500, callback = Callback(5, ()->nothing))
 	tsol = Comrade.transform(fpost, sol.u)
-	intmap = intensitymap(ModifiedKerrGMRF(tsol.sky, metadata), grid) |> imageviz
-	joinpath((@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
-	fpath = open(joinpath((@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "w")
+	intensitymap(ModifiedKerrGMRF(tsol.sky, metadata), skym.grid) |> imageviz
+	joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
+	fpath = open(joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "w")
 	write(fpath, "best_fit = " * string(tsol))
 	close(fpath)
 end
