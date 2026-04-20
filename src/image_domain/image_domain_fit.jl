@@ -1,4 +1,5 @@
-using Pkg;Pkg.activate(dirname(dirname(@__DIR__)));
+using Pkg;
+Pkg.activate(dirname(dirname(@__DIR__)));
 using VIDA
 using Comrade
 using Krang
@@ -82,7 +83,7 @@ data = Dict(2017=>"SR1_M87_2017_095_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V
 path = joinpath(dirname(dirname(@__DIR__)), "data", data[year])
 files = "/n/holylabs/doeleman_lab/Users/dochang/GRMHDImages/snapshots"
 filenames = filter(file->occursin("_160_", file), readdir(files))
-for fname in filenames[99:end]
+for fname in filenames[(99+26):149]
 
 	img_path = joinpath(files, fname)
 
@@ -184,8 +185,8 @@ for fname in filenames[99:end]
 
 		tsol = Comrade.transform(fpost, sol.u)
 
-		joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
-		fpath = open(joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "w")
+		joinpath((@__DIR__), "$(split(img_path, "/")[end])_best_fits.txt")
+		fpath = open(joinpath((@__DIR__), "$(split(img_path, "/")[end])_best_fits.txt"), "w")
 		write(fpath, "best_fit = " * string(tsol))
 		close(fpath)
 	end
@@ -209,11 +210,11 @@ for fname in filenames[99:end]
 	optf = OptimizationFunction(f, AutoEnzyme(; mode = Enzyme.set_runtime_activity(Enzyme.Reverse)))
 	dvals = similar(vals)
 	prob = OptimizationProblem(optf, vals, t)
-	sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 500, callback = Callback(5, ()->nothing))
+	sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 500, callback = Callback(5, fpost, ()->nothing))
 	tsol = Comrade.transform(fpost, sol.u)
-	intensitymap(ModifiedKerrGMRF(tsol.sky, metadata), skym.grid) |> imageviz
-	joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
-	fpath = open(joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "w")
+	#intensitymap(ModifiedKerrGMRF(tsol.sky, metadata), skym.grid) |> imageviz
+	joinpath((@__DIR__), "$(split(img_path, "/")[end])_best_fits.txt")
+	fpath = open(joinpath((@__DIR__), "$(split(img_path, "/")[end])_best_fits.txt"), "w")
 	write(fpath, "best_fit = " * string(tsol))
 	close(fpath)
 end
