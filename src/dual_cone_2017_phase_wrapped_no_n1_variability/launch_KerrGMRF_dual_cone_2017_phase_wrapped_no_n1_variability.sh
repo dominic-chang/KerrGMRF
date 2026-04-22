@@ -9,5 +9,5 @@
 #SBATCH -o /n/home06/dochang/KerrGMRF/src/dual_cone_2017_phase_wrapped_no_n1_variability/out.txt
 #SBATCH -e /n/home06/dochang/KerrGMRF/src/dual_cone_2017_phase_wrapped_no_n1_variability/err.txt
 
-cd KerrGMRF
+cd ~/KerrGMRF
 julia --project=/n/home06/dochang/KerrGMRF --threads=auto /n/home06/dochang/KerrGMRF/src/dual_cone_2017_phase_wrapped_no_n1_variability/fit_kerrgmrf_dual_cone_to_data_phase_wrapped.jl
