@@ -1,5 +1,5 @@
 function _imgviz!(
-        fig, ax, img::IntensityMap{<:Real}; scale_length = fieldofview(img).X / 4,
+        fig, ax, img::IntensityMap{<:Real}; scale_length = fieldofview(img).X / 4, show_colorbar=true,
         kwargs...
     )
     colorrange_default = (minimum(img), maximum(img))
@@ -15,7 +15,8 @@ function _imgviz!(
     color = :white#CM.Makie.to_colormap(cmap)[end]
     add_scalebar!(ax, img, scale_length, color)
 
-    CM.Colorbar(fig[1:num_data_prods, 3], hm; label = "Brightness (Jy/μas²)", tellheight = true)
+    num_data_prods = fig.layout.size[1]
+    show_colorbar && CM.Colorbar(fig[1:num_data_prods, 3], hm; label = "Brightness (Jy/μas²)", tellheight = true)
     CM.colgap!(fig.layout, 15)
 
     x1, y1 = rotmat(axisdims(img)) * VLBISkyModels.SVector(last(img.X), first(img.Y))
