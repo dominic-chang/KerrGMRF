@@ -35,3 +35,4 @@ results
 *.pdf
 err.txt
 out.txt
+image_*.txt

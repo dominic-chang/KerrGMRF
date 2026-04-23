@@ -24,6 +24,7 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
 	θo = Krang.inclination(pix)
 	met = Krang.metric(pix)
+	T = typeof(met.spin)
 	α, β = @inline Krang.screen_coordinate(pix)
 
 	norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
