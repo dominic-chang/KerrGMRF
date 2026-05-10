@@ -20,7 +20,7 @@ const ROTATION_ANGLE = 108.0 / 180 * π
 const PA_ROTATION_ANGLE = π * (180.0 - 72.0) / 180.0
 
 curr_theme = CM.Theme(
-	Image = (rasterize = true,),
+	Heatmap = (rasterize = true,),
 	Text = (fontsize = 30,),
 )
 CM.set_theme!(merge(CM.theme_latexfonts(), curr_theme))
@@ -42,7 +42,7 @@ end
 
 function load_snapshot(fname; normalize = true)
 	img = VIDA.rotated(VIDA.load_image(joinpath(SNAPSHOT_DIR, fname)), ROTATION_ANGLE)
-	img = regrid(img, imagepixels(IMAGE_FOV, IMAGE_FOV, IMAGE_PIXELS, IMAGE_PIXELS))
+	img = regrid(img, imagepixels(IMAGE_FOV, IMAGE_FOV, 160, 160))
 	img .= max.(img, 0.0)
 	normalize && normalize_flux!(img)
 	return img
@@ -58,7 +58,7 @@ function model_images(best_fit, grid; normalize = true)
 	mean_best_fit = deepcopy(best_fit)
 	@reset mean_best_fit.sky.σimg = 1e-5
 
-	model_intmap = intensitymap(ModifiedKerrGMRF(best_fit.sky, metadata), grid)
+	model_intmap = regrid(intensitymap(ModifiedKerrGMRF(best_fit.sky, metadata), grid), imagepixels(IMAGE_FOV, IMAGE_FOV, 160, 160))
 	model_mean_component_intmap = intensitymap(ModifiedKerrGMRF(mean_best_fit.sky, metadata), grid)
 
 	if normalize
@@ -144,7 +144,7 @@ plot_image_domain_fit_example(
 	snapshot_fname = "image_ma+0.5_1275_163_1_nall.h5",
 	best_fit_fname = "image_ma+0.5_1275_163_1_nall.h5_best_fits.txt",
 	tavg_fname = "ma+0.5_r1_nall_tavg.fits",
-	output_fname = "mad_mean_model_comp.png",
+	output_fname = "mad_mean_model_comp.pdf",
 	system_label = "MAD",
 	truth_spin = "0.5",
 	truth_rhigh = "1",
@@ -153,15 +153,15 @@ plot_image_domain_fit_example(
 	normalize_images = true,
 ) |> display
 
-plot_image_domain_fit_example(
+t = plot_image_domain_fit_example(
 	snapshot_fname = "image_sa+0.94_981_163_160_nall.h5",
 	best_fit_fname = "image_sa+0.94_981_163_160_nall.h5_best_fits.txt",
 	tavg_fname = "sa+0.94_r160_nall_tavg.fits",
-	output_fname = "sane_mean_model_comp.png",
+	output_fname = "sane_mean_model_comp.pdf",
 	system_label = "SANE",
 	truth_spin = "0.94",
 	truth_rhigh = "160",
-	fit_text_x = 57.0,
-	truth_text_x = 57.0,
+	fit_text_x = 55.0,
+	truth_text_x = 55.0,
 	normalize_images = false,
 ) |> display
