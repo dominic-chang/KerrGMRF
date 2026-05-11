@@ -106,4 +106,150 @@ function add_scalebar!(ax, img, scale_length, color)
     )
 end
 
+function _kde_empirical_percentile(values, p)
+    xs = sort(Float64.(filter(isfinite, collect(values))))
+    if isempty(xs)
+        return NaN
+    elseif length(xs) == 1
+        return only(xs)
+    end
 
+    idx = 1 + (length(xs) - 1) * p
+    lo = floor(Int, idx)
+    hi = ceil(Int, idx)
+    return xs[lo] + (idx - lo) * (xs[hi] - xs[lo])
+end
+
+function _kde_sample_std(xs)
+    n = length(xs)
+    n <= 1 && return 0.0
+    μ = sum(xs) / n
+    return sqrt(sum(abs2, xs .- μ) / (n - 1))
+end
+
+function kde_percentiles(values; probs = (0.16, 0.5, 0.84), ngrid = 2048)
+    xs = Float64.(filter(isfinite, collect(values)))
+    if length(xs) < 2
+        return map(p -> _kde_empirical_percentile(xs, p), probs)
+    end
+
+    xmin, xmax = extrema(xs)
+    if xmin == xmax
+        return fill(xmin, length(probs))
+    end
+
+    σ = _kde_sample_std(xs)
+    iqr = _kde_empirical_percentile(xs, 0.75) - _kde_empirical_percentile(xs, 0.25)
+    scale = min(σ, iqr / 1.34)
+    if !isfinite(scale) || scale <= 0
+        scale = σ > 0 ? σ : (xmax - xmin)
+    end
+
+    bw = 0.9 * scale * length(xs)^(-1 / 5)
+    if !isfinite(bw) || bw <= 0
+        bw = (xmax - xmin) / max(length(xs) - 1, 1)
+    end
+
+    grid = collect(range(xmin - 4bw, xmax + 4bw; length = ngrid))
+    density = zeros(Float64, length(grid))
+    for x in xs
+        @. density += exp(-0.5 * ((grid - x) / bw)^2)
+    end
+    density ./= length(xs) * bw * sqrt(2π)
+
+    cdf = zeros(Float64, length(grid))
+    for i in 2:length(grid)
+        cdf[i] = cdf[i - 1] + 0.5 * (density[i - 1] + density[i]) * (grid[i] - grid[i - 1])
+    end
+    if cdf[end] <= 0 || !isfinite(cdf[end])
+        return map(p -> _kde_empirical_percentile(xs, p), probs)
+    end
+    cdf ./= cdf[end]
+
+    return map(probs) do p
+        idx = searchsortedfirst(cdf, p)
+        if idx <= 1
+            grid[1]
+        elseif idx > length(grid)
+            grid[end]
+        else
+            frac = (p - cdf[idx - 1]) / (cdf[idx] - cdf[idx - 1])
+            grid[idx - 1] + frac * (grid[idx] - grid[idx - 1])
+        end
+    end
+end
+
+function kde_estimate(values; digits = 2)
+    q16, q50, q84 = kde_percentiles(values)
+    return (
+        center = round(q50; digits),
+        lower = round(max(q50 - q16, 0); digits),
+        upper = round(max(q84 - q50, 0); digits),
+    )
+end
+
+function kde_estimate_richtext(values; digits = 2, color = nothing)
+    estimate = kde_estimate(values; digits)
+    text = CM.Makie.rich(
+        string(estimate.center),
+        CM.Makie.subsup("-$(estimate.lower)", "+$(estimate.upper)"),
+    )
+    return isnothing(color) ? text : CM.Makie.rich(text; color)
+end
+
+function add_kde_estimate_text!(
+        ax,
+        distributions...;
+        labels = ("Dual-Cone", "PHIBI"),
+        colors = nothing,
+        digits = 2,
+        x = 0.03,
+        y = 0.95,
+        lineheight = 0.14,
+        fontsize = 20.0,
+        kwargs...
+    )
+    n = length(distributions)
+    label_values = labels === nothing ? ["dist $i" for i in 1:n] : collect(labels)
+    if length(label_values) != n
+        throw(ArgumentError("expected $n KDE labels, got $(length(label_values))"))
+    end
+
+    color_values = if colors === nothing
+        palette = CM.Makie.wong_colors()
+        [palette[mod1(i, length(palette))] for i in 1:n]
+    else
+        collect(colors)
+    end
+    if length(color_values) != n
+        throw(ArgumentError("expected $n KDE colors, got $(length(color_values))"))
+    end
+
+    plots = Any[]
+    for i in 1:n
+        text = CM.Makie.rich(
+            "$(label_values[i]): ",
+            kde_estimate_richtext(distributions[i]; digits);
+            color = color_values[i],
+        )
+        push!(
+            plots,
+            CM.text!(
+                ax,
+                x,
+                y - (i - 1) * lineheight;
+                text,
+                space = :relative,
+                align = (:left, :top),
+                font = :bold,
+                fontsize,
+                kwargs...,
+            ),
+        )
+    end
+    return plots
+end
+
+function add_percentile_text!(ax, dual_cone, phibi; kwargs...)
+    return add_kde_estimate_text!(ax, dual_cone, phibi; kwargs...)
+end
