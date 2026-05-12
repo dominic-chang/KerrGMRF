@@ -36,3 +36,5 @@ results
 err.txt
 out.txt
 image_*.txt
+*.png
+*.svg
