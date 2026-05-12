@@ -18,7 +18,7 @@ using Distributions, DistributionsAD
 using Pathfinder
 using AdvancedHMC
 using Serialization
-LinearAlgebra.BLAS.set_num_threads(24) # to avoid threading conflicts with FINUFFT
+LinearAlgebra.BLAS.set_num_threads(48) # to avoid threading conflicts with FINUFFT
 rng = StableRNG(1234)
 
 include(joinpath(dirname(@__DIR__), "utils.jl"))
@@ -40,13 +40,19 @@ scan_avg = true
 fractional_noise = 0.01
 bulkx = 1.0
 bulky = 1.0
-bulkpix = 40#20
-raster_size = 100.0# 90 # in microarcseconds    
 snrcut = 3.0
 uv_min = 0.1e9
-fovx = μas2rad(120.0)
-fovy = μas2rad(120.0)
-npix = 40
+#bulkpix = 40#20
+#raster_size = 100.0# 90 # in microarcseconds    
+#fovx = μas2rad(120.0)
+#fovy = μas2rad(120.0)
+#npix = 40
+
+bulkpix = 70#20
+raster_size = 140.0# 90 # in microarcseconds    
+fovx = μas2rad(140.0)
+fovy = μas2rad(140.0)
+npix = 70
 year = 2017
 
 data = Dict(2017=>"SR1_M87_2017_095_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V1_M87_2018_111_b3_hops_netcal_10s_StokesI.uvfits", "bhex" => "30nights_subchanneled_mergedobs_244GHz.uvfits")#/n/home06/dochang/KerrGMRF/data/sim140_frame0026_230.5_GHz_synthdata_ngEHTsim.uvfits")#"frame0008_230.5_GHz_synthdata_ngEHTsim.uvfits")
@@ -123,6 +129,12 @@ result = pathfinder(fpost; init = Comrade.inverse(fpost, xopt))#, ndraws_elbo = 
 inv_metric = result.fit_distribution_transformed.Σ
 init_params = result.draws[:, 1]
 transform(fpost, init_params)
+imageviz(ComradeBase.intensitymap(skymodel(post, transform(fpost, init_params)), skym.grid))
+imageviz(ComradeBase.intensitymap(skymodel(post, transform(fpost, init_params)), skym.grid), colorscale = log, colorrange = (1e-7, 1e-3))
+imageviz(ComradeBase.intensitymap(smoothed(skymodel(post, transform(fpost, init_params)), μas2rad(10/(2.355))), skym.grid), colormap = :afmhot)#,colorscale=log, colorrange=(1e-7, 1e-3))
+imageviz(ComradeBase.intensitymap(smoothed(skymodel(post, transform(fpost, init_params)), μas2rad(5/(2.355))), skym.grid), colormap = :afmhot)#,colorscale=log, colorrange=(1e-7, 1e-3))
+
+
 
 # AdvancedHMC
 metric = DiagEuclideanMetric(diag(inv_metric))
@@ -134,4 +146,4 @@ smplr = HMCSampler(kernel, metric, adaptor)
 out=joinpath((@__DIR__), "Results_non_diagonal_metric_grmhd_dual_cone_$(bulkpix)_$(Int(raster_size))_rast_$(npix)_res_$(Int(floor(rad2μas(fovx))))_fov_year_$year")#Results_non_diagonal_metric_20_rast_extremely_low_res_pinned_frac")
 println("starting")
 #chain = sample(rng, post, NUTS(0.9), 60_000; n_adapts = 10_000, progress = true, saveto = DiskStore(mkpath(out), 10), initial_params = transform(fpost, init_params))#, restart = true)
-chain = sample(rng, post, smplr, 120_000; n_adapts = 500, progress = true, saveto = DiskStore(mkpath(out), 10), initial_params = transform(fpost, init_params), restart = true)
+chain = sample(rng, post, smplr, 140_000; n_adapts = 500, progress = true, saveto = DiskStore(mkpath(out), 10), initial_params = transform(fpost, init_params), restart = true)

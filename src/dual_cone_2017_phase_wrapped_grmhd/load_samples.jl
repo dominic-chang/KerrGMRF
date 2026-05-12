@@ -20,6 +20,7 @@ using AdvancedHMC
 using Serialization
 using MCMCChains
 using StatsBase
+using ColorSchemes
 
 LinearAlgebra.BLAS.set_num_threads(24) # to avoid threading conflicts with FINUFFT
 rng = StableRNG(1234)
@@ -52,6 +53,20 @@ fovy = μas2rad(120.0)
 npix = 40
 year = 2017
 
+bulkpix = 70#20
+raster_size = 140.0# 90 # in microarcseconds    
+fovx = μas2rad(140.0)
+fovy = μas2rad(140.0)
+npix = 70
+year = 2017
+
+#bulkpix = 70#20
+#raster_size = 140.0# 90 # in microarcseconds    
+#fovx = μas2rad(140.0)
+#fovy = μas2rad(140.0)
+#npix = 70
+#year = 2017
+
 data = Dict(2017=>"SR1_M87_2017_095_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V1_M87_2018_111_b3_hops_netcal_10s_StokesI.uvfits", "bhex" => "30nights_subchanneled_mergedobs_244GHz.uvfits")#/n/home06/dochang/KerrGMRF/data/sim140_frame0026_230.5_GHz_synthdata_ngEHTsim.uvfits")#"frame0008_230.5_GHz_synthdata_ngEHTsim.uvfits")
 path = joinpath(dirname(dirname(@__DIR__)), "data", data[year])
 img_path = joinpath(dirname(dirname(@__DIR__)), "data", "image_ma+0.5_1275_163_1_nall.h5")
@@ -63,7 +78,8 @@ inimg.rf, inimg.ra, inimg.dec = obsin.rf, obsin.ra, obsin.dec
 inimg = inimg.rotate(π - 72*pi/180)
 inimg.imvec *= 0.65/inimg.total_flux()
 inimg.display(scale = "log")
-inimg.blur_circ(μas2rad(7.0)).display()
+inimg_blur = inimg.blur_circ(μas2rad(10.0))
+inimg_blur.display()
 inimg.mjd = 57848
 obsin.mjd = 57848
 obs = inimg.observe_same(obsin, ampcal = ampcal, phasecal = phasecal, add_th_noise = add_th_noise, seed = seed, ttype = "fast")
@@ -108,7 +124,8 @@ post = VLBIPosterior(skym, Comrade.IdealInstrumentModel(), dlcamp, dcphase; admo
 fpost = asflat(post)
 run_name=joinpath((@__DIR__), "Results_non_diagonal_metric_grmhd_dual_cone_$(bulkpix)_$(Int(raster_size))_rast_$(npix)_res_$(Int(floor(rad2μas(fovx))))_fov_year_$year")#Results_non_diagonal_metric_20_rast_extremely_low_res_pinned_frac")
 out=joinpath((@__DIR__), run_name)
-chain = load_samples(joinpath(dirname(@__DIR__), run_name))
+prechain = load_samples(joinpath(dirname(@__DIR__), run_name))#, 500:100:120_000)
+chain = prechain[1500:end]
 checkpoints = deserialize(joinpath(out, "checkpoint.jls"))
 checkpoints.state[3].state[2].metric.M⁻¹ |> findmax
 checkpoints.state[3].state[2].metric.M⁻¹ |> findmin
@@ -118,7 +135,11 @@ fpost = asflat(post)
 fchain = Comrade.inverse.(Ref(fpost), chain)
 
 CM.lines([i[1] for i in fchain])
+avechain = map(x->begin
+	t = @reset x.sky.σimg = 1e-7	
+end, chain)
 msamples = skymodel.(Ref(post), chain)
+avemsamples = skymodel.(Ref(post), avechain)
 stats = samplerstats(chain)
 
 rand_dir = rand(1:length(cprior1))
@@ -134,20 +155,18 @@ CM.lines(m_d)
 xopt = chain[end]
 using Accessors
 using StatsBase
-temp = chain[end]
+temp = rand(chain)#
 intensitymap(skymodel(post, temp), skym.grid) |> imageviz
 
 CM.lines(stats.log_density)
 
 Chains(chain.sky.m_d)
-hpd(Chains(rad2μas.(chain.sky.θo[5_000:end])))
-hpd(Chains((chain.sky.θo[5_000:end])))
+hpd(Chains(rad2μas.(chain.sky.θo[1500:end])))
+hpd(Chains((chain.sky.θo[1500:end])))
 CM.lines(m_d)
 CM.lines(moving_average(m_d, 10))
-CM.lines((chain.sky.spin[5_000:end]))
+CM.lines((chain.sky.spin))
 CM.lines(rpeak)
-CM.lines((chain.sky.frac))
-CM.lines((chain.sky.pa .* 180/π))
 CM.lines((chain.sky.θo))
 CM.lines((chain.sky.θs))
 CM.lines((chain.sky.χ))
@@ -158,9 +177,11 @@ CM.lines((chain.sky.p1))
 CM.lines((chain.sky.p2))
 CM.lines((chain.sky.βv))
 
-CM.hist(m_d)
-CM.hist((chain.sky.spin))
-CM.hist((chain.sky.χ))
+h = CM.hist(m_d)
+
+CM.hist((m_d[2000:end]))
+CM.hist((chain.sky.spin[1500:end]))
+CM.hist((chain.sky.χ[1500:end]))
 CM.hist(rpeak)
 
 begin
@@ -190,9 +211,7 @@ end
 CM.scatter(m_d, ([i[rand_dir] for i in chain.sky.c1]), alpha = 0.5)
 CM.scatter(([i[1000] for i in chain.sky.c1]), ([i[1200] for i in chain.sky.c1]), alpha = 0.5)
 begin
-	mvs = CM.scatter(m_d[15_000:end], (chain[15_000:end].sky.spin), alpha = 0.2)
-	CM.lines!(mvs.axis, [3.83 for i in 1:10], range(-1, 1, length = 10), color = :red, linestyle = :dash)
-	CM.lines!(mvs.axis, range(2.0, 6.0, length = 10), [0.5 for i in 1:10], color = :red, linestyle = :dash)
+	mvs = CM.scatter(m_d, (chain.sky.spin), alpha = 0.2)
 	CM.xlims!(mvs.axis, (2.0, 6.0))
 	CM.ylims!(mvs.axis, (0.0, 1.0))
 	mvs.axis.xlabel = "Mass (μas)"
@@ -225,26 +244,98 @@ post(Comrade.transform(fpost, psample))
 using MCMCChains
 ess((reduce(hcat, fchain))[1, begin:end])
 
-newgrid = imagepixels(fovx, fovy, 2*npix, 2*npix; executor = ThreadsEx())
-
+newgrid = imagepixels(fovx, fovy, npix, npix; executor = ThreadsEx())
+imgs_blur = intensitymap.(smoothed.(msamples, μas2rad(7/(2.355))), Ref(newgrid))
 imgs = intensitymap.(msamples, Ref(newgrid))
-fig = CM.Figure();
+aveimgs = intensitymap.(avemsamples, Ref(newgrid))
+fig = CM.Figure(size=(300.0,100.0));
 CM.image!(CM.Axis(fig[1, 1], xreversed = true, aspect = 1), intensitymap(smoothed(msamples[end], μas2rad(10/(2.355))), newgrid), colormap = :afmhot)
 CM.image!(CM.Axis(fig[1, 1], xreversed = false, aspect = 1), intensitymap(msamples[1], newgrid), colormap = :afmhot)
-fig
-rand(imgs) |> imageviz
-mimg = mean(imgs)
-simg = std(imgs)
-fig = CM.Figure(; resolution = (700, 700));
-axs = [CM.Axis(fig[i, j], xreversed = true, aspect = 1) for i in 1:2, j in 1:2]
-CM.image!(axs[1, 1], mimg, colormap = :afmhot);
-axs[1, 1].title="Mean"
-CM.image!(axs[1, 2], simg ./ (max.(mimg, 1e-2)), colorrange = (0.0, 2.0), colormap = :afmhot);
-axs[1, 2].title = "Std"
-CM.image!(axs[2, 1], rand(imgs), colormap = :afmhot);
-CM.image!(axs[2, 2], rand(imgs), colormap = :afmhot);
-CM.hidedecorations!.(axs)
-fig
+
+currtheme = CM.Theme(
+	margin = (0.0, 0.0, 0.0, 0.0),
+	padding = (0.0, 0.0, 0.0, 0.0),
+	Text = (fontsize = 30.0,),
+	Colorbar = (ticklabelsize = 25.0, labelsize = 25.0),
+	Axis = (margin = (0.0, 0.0, 0.0, 0.0),),
+)
+CM.set_theme!(merge(currtheme, CM.theme_latexfonts()))
+
+begin
+	inimgnew = begin
+		t = inimg.regrid_image(fovx, 3npix)
+		IntensityMap(reverse(reverse(reshape(pyconvert(Vector{Float64}, t.ivec), (3npix, 3npix)), dims=1), dims=2), newgrid)
+	end
+	time_ave_inimg = smooth(Comrade.rotated(regrid(Comrade.load_fits("/n/home06/dochang/KerrGMRF/data/ma+0.5_r1_nall_tavg.fits", IntensityMap), newgrid), π*(108.0)/180.0) |> normalize!, μas2rad(10/(2*√(2*log(2)))))
+
+	inimg_blurnew = begin
+		t = inimg_blur.regrid_image(fovx, npix)
+		temp = IntensityMap(reverse(reverse(reshape(pyconvert(Vector{Float64}, t.ivec), (npix, npix)), dims=1), dims=2), newgrid)
+		temp ./= maximum(temp)
+		temp
+	end
+
+	rand(imgs) |> imageviz
+	mimg = mean(imgs)
+	maveimg = mean(aveimgs)
+	mimg_blur = mean(imgs_blur)
+	mimg_blur ./= maximum(mimg_blur)
+
+	simg = std(imgs)
+	fig = CM.Figure(; resolution = (1600, 610));
+	axs = [CM.Axis(fig[i, j], xreversed = true, aspect = 1) for i in 1:2, j in 1:5]
+	a,b,c = rand(1:length(imgs), 3)
+	_imgviz!(fig, axs[2, 1], time_ave_inimg, colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[2, 1], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Time ave. of Truth", color=:white, fontsize=30.0)
+	CM.text!(axs[2, 1], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(30.0), text=L"(10\,\mu as\text{ blur})", color=:white, fontsize=30.0)
+	_imgviz!(fig, axs[1, 1], inimg_blurnew, colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[1, 1], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text=L"\text{Truth }(10\,\mu as \text{ blur})", color=:white, fontsize=30.0)
+	_imgviz!(fig, axs[1, 2], mimg, colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[1, 2], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Posterior average", color=:white, fontsize=30.0)
+	#CM.text!(axs[1, 3], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(32.0), text=L"(7\mu as\; \text{blur})", color=:white, fontsize=30.0)
+	_imgviz!(fig, axs[1, 3], imgs[a], colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[1, 3], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Sample 1", color=:white, fontsize=30.0)
+	_imgviz!(fig, axs[2, 3], imgs[b], colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[2, 3], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Sample 2", color=:white, fontsize=30.0)
+	#_imgviz!(fig, axs[2, 3], imgs[c], colormap = :inferno, show_colorbar=false);
+	#CM.text!(axs[2, 3], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Sample 3", color=:white, fontsize=30.0)
+
+
+	_imgviz!(fig, axs[2, 5], std(imgs_blur), colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[2, 5], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Absolule", color=:white, fontsize=30.0)
+	CM.text!(axs[2, 5], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(32.0), text="standard dev.", color=:white, fontsize=30.0)
+	_imgviz!(fig, axs[2, 2], mean(aveimgs), colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[2, 2], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text="Average", color=:white, fontsize=30.0)
+	CM.text!(axs[2, 2], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(32.0), text="mean component", color=:white, fontsize=30.0)
+	#CM.text!(axs[1, 4], fovx/2-μas2rad(5.0), fovy/2 - μas2rad(40.0), text="Average mean\ncomponent", color=:white, fontsize=30.0, font=:bold)
+	_imgviz!(fig, axs[1, 4], aveimgs[a], colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[1, 4], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text=L"\text{Mean component}", color=:white, fontsize=30.0)
+	CM.text!(axs[1, 4], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(32.0), text=L"\text{of sample 1}", color=:white, fontsize=30.0)
+	fracstd = _imgviz!(fig, axs[1, 5], simg ./ (max.(mimg, eps())), colorrange=(0, 1.2), colormap = :viridis, show_colorbar=false, highclip=ColorSchemes.colorschemes[:viridis][end])#, lowclip=ColorSchemes.colorschemes[:viridis][begin]);
+	CM.text!(axs[1, 5], fovx/2-μas2rad(5.0), fovy/2 - μas2rad(40.0), text="Fractional\nstandard dev.", color=:white, fontsize=30.0, strokewidth=20.0, font=:bold)
+	fracsnp = _imgviz!(fig, axs[2, 4], aveimgs[b] ./ maximum(aveimgs[b]), colormap = :inferno, show_colorbar=false);
+	CM.text!(axs[2, 4], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(17.0), text=L"\text{Mean component}", color=:white, fontsize=30.0)
+	CM.text!(axs[2, 4], fovx/2-μas2rad(7.0), fovy/2 - μas2rad(32.0), text=L"\text{of sample 2}", color=:white, fontsize=30.0)
+	#ax = CM.Axis(fig[1,6])
+	CM.Colorbar(fig[1,6], fracstd.plot)
+	CM.Colorbar(fig[2,6], fracsnp.plot, label=L"\text{Rel. intensity mJy/}\mu as")
+
+
+	CM.hidedecorations!.(axs)
+
+	for i in 1:1
+		CM.rowgap!(fig.layout, i, 20.0)
+	end
+	for j in 1:2
+		CM.colgap!(fig.layout, j, 0.0)
+	end
+	CM.colgap!(fig.layout, 3, 30.0)
+	CM.colgap!(fig.layout, 4, 0.0)
+
+	CM.save("GRMHD_visibility_posterior_draws.png", fig)
+
+	fig
+end
 
 using Plots
 p = Plots.plot(layout = (1, 2));
