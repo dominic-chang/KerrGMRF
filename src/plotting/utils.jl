@@ -1,5 +1,5 @@
 function _imgviz!(
-        fig, ax, img::IntensityMap{<:Real}; scale_length = fieldofview(img).X / 4, show_colorbar=true,
+        fig, ax, img::IntensityMap{<:Real}; scale_length = fieldofview(img).X / 4, show_colorbar=true, show_scalebar=true,
         kwargs...
     )
     colorrange_default = (minimum(img), maximum(img))
@@ -13,7 +13,7 @@ function _imgviz!(
     CM.rotate!(hm, -ComradeBase.posang(axisdims(img)))
 
     color = :white#CM.Makie.to_colormap(cmap)[end]
-    add_scalebar!(ax, img, scale_length, color)
+    show_scalebar && add_scalebar!(ax, img, scale_length, color)
 
     num_data_prods = fig.layout.size[1]
     show_colorbar && CM.Colorbar(fig[1:num_data_prods, 3], hm; label = "Brightness (Jy/μas²)", tellheight = true)
@@ -252,4 +252,26 @@ end
 
 function add_percentile_text!(ax, dual_cone, phibi; kwargs...)
     return add_kde_estimate_text!(ax, dual_cone, phibi; kwargs...)
+endstruct MarginMakieHist <: PairPlots.VizTypeDiag
+    kwargs::Any
+    MarginMakieHist(; kwargs...) = new(kwargs)
+end
+function PairPlots.diagplot(
+    ax::CM.Makie.Axis,
+    viz::MarginMakieHist,
+    series::PairPlots.AbstractSeries,
+    colname,
+)
+
+    cn = PairPlots.columnnames(series)
+    if colname ∉ cn
+        return
+    end
+    dat = getproperty(series.table, colname)
+
+    bins = get(series.kwargs, :bins, 16)
+    bins = get(viz.kwargs, :bins, bins)
+
+    CM.Makie.hist!(ax, dat; series.kwargs..., viz.kwargs..., bins = bins, scale_to=1.0)#normalization = :pdf)
+    CM.Makie.ylims!(ax, low = 0)
 end
