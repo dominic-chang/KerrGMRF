@@ -18,13 +18,38 @@ using LaTeXStrings
 using Pathfinder
 using Plots: Plots
 using AdvancedHMC
-LinearAlgebra.BLAS.set_num_threads(24) # to avoid threading conflicts with FINUFFT
+LinearAlgebra.BLAS.set_num_threads(48) # to avoid threading conflicts with FINUFFT
 rng = StableRNG(1234)
 
 include(joinpath(dirname(@__DIR__), "utils.jl"))
 include(joinpath(dirname(@__DIR__), "plotting", "utils.jl"))
 include(joinpath(dirname(@__DIR__), "modifiers.jl"))
 include(joinpath(dirname(@__DIR__), "models", "KerrGMRF_no_n1_variability.jl"))
+
+function (c::Callback)(state, loss, others...)
+	fpost = c.fpost
+	metadata = fpost.lpost.skymodel.metadata
+	loss_arr = c.loss_arr
+	grid = fpost.lpost.skymodel.grid
+	c.counter += 1
+
+	if c.counter % c.stride == 0
+		append!(loss_arr, loss)
+		println(
+			"Iteration: $(c.counter), Loss: $(loss), m_d: $(rad2μas(Comrade.transform(fpost, state.u).sky.m_d)) μas, spin: $(Comrade.transform(fpost, state.u).sky.spin), β: $(Comrade.transform(fpost, state.u).sky.βv), θs: $(Comrade.transform(fpost, state.u).sky.θs) deg, σimg: $(Comrade.transform(fpost, state.u).sky.σimg)",
+		)
+		tsol = Comrade.transform(fpost, state.u)
+		img=imageviz(intensitymap(ModifiedKerrGMRF(Comrade.transform(fpost, state.u).sky, metadata), grid), colorscale = log10, colorrange = (1e-6, 1e-3), colormap = :inferno)
+		img.axis.aspect=4/3
+		CairoMakie.text!(img.axis, (77-20), (65-20); text = latexstring("M/D: $(round(tsol.sky.m_d  |> rad2μas,digits=2))\\ \\mu as"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, (77-20), (52-20); text = latexstring("a: $(round(tsol.sky.spin, digits=2))"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, (77-20), (35-20); text = latexstring("\\theta_o: $(round(tsol.sky.θo, digits=2))\\degree"), color = :white, fontsize = 35)
+		display(img)
+		return false
+	else
+		return false
+	end
+end
 
 function ModifiedKerrGMRF(θ2, meta)
 	m = Comrade.modify(KerrGMRF(θ2, meta), Stretch((θ2.m_d), (θ2.m_d)), Rotate(θ2.pa*π/180), Shift(μas2rad(10.0), μas2rad(0.0)))
@@ -87,21 +112,60 @@ scan_avg = true
 fractional_noise = 0.01
 bulkx = 1.0
 bulky = 1.0
-bulkpix = 60
-raster_size = 150.0 # in microarcseconds    
 snrcut = 3.0
 uv_min = 0.1e9
-fovx = μas2rad(130.0)
-fovy = μas2rad(130.0)
-npix = 30
+
+#bulkpix = 120
+#raster_size = 120.0 # in microarcseconds    
+#fovx = μas2rad(180.0)
+#fovy = μas2rad(150.0)
+#npixx = 60
+#npixy = 50
+
+#bulkpix = 120
+#raster_size = 180.0 # in microarcseconds    
+#fovx = μas2rad(180.0)
+#fovy = μas2rad(120.0)
+#npixx = 90
+#npixy = 60
+
+#bulkpix = 180
+#raster_size = 150.0 # in microarcseconds    
+#fovx = μas2rad(180.0)
+#fovy = μas2rad(120.0)
+#npixx = 90
+#npixy = 60
+
+bulkpix = 90
+raster_size = 180.0 # in microarcseconds    
+fovx = μas2rad(180.0)
+fovy = μas2rad(120.0)
+npixx = 90
+npixy = 60
+
+#bulkpix = 90
+#raster_size = 180.0 # in microarcseconds    
+#fovx = μas2rad(160.0)
+#fovy = μas2rad(130.0)
+#npixx = 64
+#npixy = 52
+#
+#
+#bulkpix = 180
+#raster_size = 180.0 # in microarcseconds    
+#fovx = μas2rad(160.0)
+#fovy = μas2rad(130.0)
+#npixx = 64
+#npixy = 52
+
 year = 2017
 
-data = Dict(2017=>"SR1_M87_2017_095_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V1_M87_2018_111_b3_hops_netcal_10s_StokesI.uvfits", "bhex" => "frame0008_230.5_GHz_synthdata_ngEHTsim.uvfits")
+data = Dict(2017=>"SR1_M87_2017_101_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V1_M87_2018_111_b3_hops_netcal_10s_StokesI.uvfits", "bhex" => "frame0008_230.5_GHz_synthdata_ngEHTsim.uvfits")
 path = joinpath(dirname(dirname(@__DIR__)), "data", data[year])
 
 # Get observer information
 obs = (ehtim.obsdata.load_uvfits(path) |> scan_average).flag_uvdist(uv_min = 0.1e9).add_fractional_noise(fractional_noise)
-dvis, dvisamp, dcphase, dlcamp = extract_table(obs, Visibilities(), VisibilityAmplitudes(), ClosurePhases(; snrcut = 3.0), LogClosureAmplitudes(; snrcut = 3.0))
+dvis, dvisamp, dcphase, dlcamp = extract_table(obs, Visibilities(), VisibilityAmplitudes(), ClosurePhases(; snrcut = snrcut), LogClosureAmplitudes(; snrcut = snrcut))
 
 bulkgrid            = imagepixels(bulkx, bulky, bulkpix, bulkpix; executor = ThreadsEx())
 transform1, cprior1 = matern(size(bulkgrid))
@@ -110,12 +174,12 @@ prior               = (
 m_d = Uniform(μas2rad(1.0), μas2rad(8.0)),
 spin = Uniform(0.01, 0.99),
 θo = Uniform(120.0, 179.0),
-θs = Uniform(40.0, 90.0),
+θs = Uniform(40.5, 90.0),
 rpeak = Uniform(1.0, 10.0),
 p1 = Uniform(0.1, 5.0),
 p2 = Uniform(1.0, 5.0),
 χ = VLBIImagePriors.DiagonalVonMises(0, inv(π^2)),
-pa =VLBIImagePriors.DeltaDist(108.0),
+pa = VLBIImagePriors.DeltaDist(108.0),
 ι = Uniform(0, π/2),
 βv = Uniform(0.01, 0.99),
 spec = Uniform(-1.0, 5.0),
@@ -132,7 +196,7 @@ offset              = 0.0
 skym                = SkyModel(
 ModifiedKerrGMRF,
 prior,
-imagepixels(fovx, fovy, npix, npix; executor = ThreadsEx());
+imagepixels(fovx, fovy, npixx, npixy; executor = ThreadsEx());
 metadata = (; bulkgrid, transform1, transform2, raster_size, offset)#algorithm = FINUFFTAlg(; threads = 1)
 )
 
@@ -158,24 +222,8 @@ xopt =
 				#pa = 108.0,
 			),
 		)
-xvals = ((post) -> begin
-	temp = prior_sample(post)#transform(fpost, prior_sample(fpost))
-	newvals = []
-	for key in keys(temp.sky)
-		if key in keys(curr.sky)
-			push!(newvals, getproperty(curr.sky, key))
-		else
-			push!(newvals, getproperty(temp.sky, key))
-		end
-	end
-	outvals = (sky = NamedTuple{keys(temp.sky)}(newvals),)
-	@reset outvals.sky.σimg = 1e-1
-	return outvals
-end)(post)
-m = skymodel(post, xvals)
-imageviz(ComradeBase.intensitymap(m, skym.grid))
 
-let curr = curr, xopt=xopt,xvals=xvals, lr=lr, fpost=fpost, post=post
+xopt, xol = let curr = curr, xopt=xopt, lr=lr, fpost=fpost, post=post
 	curr = (sky = NamedTuple{keys(curr.sky)}(xopt.sky[keys(curr.sky)]),)
 	xvals = ((post) -> begin
 		temp = prior_sample(post)
@@ -188,40 +236,23 @@ let curr = curr, xopt=xopt,xvals=xvals, lr=lr, fpost=fpost, post=post
 			end
 		end
 		outvals = (sky = NamedTuple{keys(temp.sky)}(newvals),)
-		@reset outvals.sky.σimg = 1e0
+		@reset outvals.sky.σimg = 1e-1
 		return outvals
 	end)(post)
-	xopt, sol = comrade_opt(post, OptimizationOptimisers.Adam(lr); initial_params = xvals, maxiters = 100, g_tol = 1e-1, callback = Callback(20, fpost, ()->nothing))
+	comrade_opt(post, OptimizationOptimisers.Adam(lr); initial_params = xvals, maxiters = 500, g_tol = 1e-1, callback = Callback(20, fpost, ()->nothing))
 end
-
-curr = (sky = NamedTuple{keys(curr.sky)}(xopt.sky[keys(curr.sky)]),)
-xvals = ((post) -> begin
-	temp = prior_sample(post)
-	newvals = []
-	for key in keys(temp.sky)
-		if key in keys(curr.sky)
-			push!(newvals, getproperty(curr.sky, key))
-		else
-			push!(newvals, getproperty(temp.sky, key))
-		end
-	end
-	outvals = (sky = NamedTuple{keys(temp.sky)}(newvals),)
-	@reset outvals.sky.σimg = 5e-1
-	return outvals
-end)(post)
-xopt, sol = comrade_opt(post, OptimizationOptimisers.Adam(lr); initial_params = xvals, maxiters = 200, g_tol = 1e-1, callback = Callback(20, fpost, ()->nothing))
 
 Comrade.residual(post, xopt)
 imageviz(ComradeBase.intensitymap(skymodel(post, xopt), skym.grid))#,colorscale=log, colorrange=(1e-10, 1e-2))
 
 # initialize with pathfinder
-result = pathfinder(fpost; init = Comrade.inverse(fpost, xopt), ndraws_elbo = 50, ntries = 5_000)
+result = pathfinder(fpost; init = Comrade.inverse(fpost, xopt))#, ndraws_elbo = 50, ntries = 5_000)
 inv_metric = result.fit_distribution_transformed.Σ
 init_params = result.draws[:, 1]
 transform(fpost, init_params)
 imageviz(ComradeBase.intensitymap(skymodel(post, transform(fpost, init_params)), skym.grid))
 imageviz(ComradeBase.intensitymap(skymodel(post, transform(fpost, init_params)), skym.grid), colorscale = log, colorrange = (1e-7, 1e-3))
-imageviz(ComradeBase.intensitymap(smoothed(skymodel(post, transform(fpost, init_params)), μas2rad(20/(2.355))), skym.grid), colormap = :afmhot)#,colorscale=log, colorrange=(1e-7, 1e-3))
+imageviz(ComradeBase.intensitymap(smoothed(skymodel(post, transform(fpost, init_params)), μas2rad(10/(2.355))), skym.grid), colormap = :afmhot)#,colorscale=log, colorrange=(1e-7, 1e-3))
 imageviz(ComradeBase.intensitymap(smoothed(skymodel(post, transform(fpost, init_params)), μas2rad(5/(2.355))), skym.grid), colormap = :afmhot)#,colorscale=log, colorrange=(1e-7, 1e-3))
 
 
@@ -230,11 +261,12 @@ imageviz(ComradeBase.intensitymap(smoothed(skymodel(post, transform(fpost, init_
 metric = DiagEuclideanMetric(diag(inv_metric))
 integrator = Leapfrog(0.01)#find_good_stepsize(Hamiltonian(metric, fpost), init_params))
 kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn()))
-adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.8, integrator);
+adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.65, integrator);
 	init_buffer = 100, term_buffer = 200)
 smplr = HMCSampler(kernel, metric, adaptor)
-out=joinpath((@__DIR__), "Results_non_diagonal_metric_dual_cone_$(bulkpix)_$(Int(raster_size))_rast_$(npix)_res_$(Int(floor(rad2μas(fovx))))_fov_year_$(year)_phase_wrapped")#Results_non_diagonal_metric_20_rast_extremely_low_res_pinned_frac")
-println("starting")
+out=joinpath((@__DIR__), "Results_non_diagonal_metric_dual_cone_$(bulkpix)_$(Int(raster_size))_rast_$(npixx)_$(npixy)_res_$(Int(floor(rad2μas(fovx))))_$(Int(floor(rad2μas(fovy))))_fov_year_$(year)_phase_wrapped")#Results_non_diagonal_metric_20_rast_extremely_low_res_pinned_frac")
+println("starting: $out")
 
 #sample(rng, post, smplr, 120_000; n_adapts=15000, initial_params=transform(fpost, init_params), progress=true)
-chain = sample(rng, post, smplr, 120_000; n_adapts = 15_000, saveto = DiskStore(mkpath(out), 10), initial_params = transform(fpost, init_params), restart = true)
+#chain = sample(rng, post, smplr, 120_000; n_adapts = 1000, initial_params = transform(fpost, init_params))#, restart = true)
+chain = sample(rng, post, smplr, 120_000; n_adapts = 500, saveto = DiskStore(mkpath(out), 10), initial_params = transform(fpost, init_params), restart = true)
