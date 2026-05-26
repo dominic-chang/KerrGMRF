@@ -1,5 +1,3 @@
-using CairoMakie: CairoMakie
-
 function moving_average(data, window_size)
 	return [mean(data[i:(window_size+i)]) for i in 1:(length(data)-window_size)]
 end
@@ -27,9 +25,9 @@ function (c::Callback)(state, loss, others...)
 		)
 		tsol = Comrade.transform(fpost, state.u)
 		img=imageviz(intensitymap(ModifiedKerrGMRF(Comrade.transform(fpost, state.u).sky, metadata), grid), colorscale = log10, colorrange = (1e-6, 1e-3), colormap = :inferno)
-		CairoMakie.text!(img.axis, (77-20), (65-20); text = latexstring("M/D: $(round(tsol.sky.m_d  |> rad2μas,digits=2))\\ \\mu as"), color = :white, fontsize = 35)
-		CairoMakie.text!(img.axis, (77-20), (52-20); text = latexstring("a: $(round(tsol.sky.spin, digits=2))"), color = :white, fontsize = 35)
-		CairoMakie.text!(img.axis, (77-20), (35-20); text = latexstring("\\theta_o: $(round(tsol.sky.θo, digits=2))\\degree"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, 1.0, 0.9; space=:relative, text = latexstring("M/D: $(round(tsol.sky.m_d  |> rad2μas,digits=2))\\ \\mu as"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, 1.0, 0.8; space=:relative, text = latexstring("a: $(round(tsol.sky.spin, digits=2))"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, 1.0, 0.7; space=:relative, text = latexstring("\\theta_o: $(round(tsol.sky.θo, digits=2))\\degree"), color = :white, fontsize = 35)
 		display(img)
 		return false
 	else
