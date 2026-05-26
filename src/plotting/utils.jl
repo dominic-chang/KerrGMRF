@@ -1,5 +1,4 @@
 using PairPlots
-using Comrade
 
 struct MarginMakieHist <: PairPlots.VizTypeDiag
 	kwargs::Any
@@ -26,7 +25,7 @@ function PairPlots.diagplot(
 end
 
 function _imgviz!(
-	fig, ax, img::IntensityMap{<:Real}; scale_length = fieldofview(img).X / 4, show_colorbar = true, show_scalebar = true,
+	fig, ax, img::IntensityMap{<:Real}; scale_length = fieldofview(img).X / 4, show_colorbar = true, show_scalebar = true, scalebar_color=:white,
 	kwargs...,
 )
 	colorrange_default = (minimum(img), maximum(img))
@@ -39,7 +38,7 @@ function _imgviz!(
 	hm = CM.heatmap!(ax, img; colorrange = crange, colormap = cmap, dkwargs...)
 	CM.rotate!(hm, -ComradeBase.posang(axisdims(img)))
 
-	color = :white#CM.Makie.to_colormap(cmap)[end]
+	color = scalebar_color
 	show_scalebar && add_scalebar!(ax, img, scale_length, color)
 
 	num_data_prods = fig.layout.size[1]
@@ -206,12 +205,12 @@ function kde_percentiles(values; probs = (0.16, 0.5, 0.84), ngrid = 2048)
 	end
 end
 
-function kde_estimate(values; digits = 2)
-	q16, q50, q84 = kde_percentiles(values)
+function kde_estimate(values; digits = 2, probs = (0.16, 0.5, 0.84))
+	ql, qc, qu = kde_percentiles(values; probs)
 	return (
-		center = round(q50; digits),
-		lower = round(max(q50 - q16, 0); digits),
-		upper = round(max(q84 - q50, 0); digits),
+		center = round(qc; digits),
+		lower = round(max(qc - ql, 0); digits),
+		upper = round(max(qu - qc, 0); digits),
 	)
 end
 
@@ -303,4 +302,26 @@ function PairPlots.diagplot(
 
 	CM.Makie.hist!(ax, dat; series.kwargs..., viz.kwargs..., bins = bins, scale_to = 1.0)#normalization = :pdf)
 	CM.Makie.ylims!(ax, low = 0)
+end
+
+function PairPlots.diagplot(ax::CM.Makie.Axis, viz::PairPlots.MarginQuantileText, series::PairPlots.AbstractSeries, colname)
+    cn = PairPlots.columnnames(series)
+    if colname ∉ cn
+        return
+    end
+    dat = PairPlots.ustrip(PairPlots.disallowmissing(vec(PairPlots.getcolumn(series, colname))))
+
+    quantiles = PairPlots.quantile(dat, viz.quantiles)
+    mid = quantiles[2]
+    low = mid - quantiles[1]
+    high = quantiles[3] - mid
+
+    title = viz.formatter(low,mid,high)
+    prev_title = ax.title[]
+    if length(string(prev_title)) > 0
+        prev_title = CM.Makie.rich(prev_title, "\n\n")
+    end
+	ax.title = CM.Makie.rich(prev_title, title; series.kwargs..., viz.kwargs...)
+    
+    return
 end
