@@ -300,7 +300,7 @@ diagonal_square_marker(color1, color2) = Any[
 ]
 
 fig = begin
-	fig = CM.Figure(size = (900, 1500))
+	fig = CM.Figure(size = (865, 1500))
 
 	xvals = LinRange(1000, 1000 + 5*50, size(dfjk.m_d)[1])
 	xvalsband = [1000-5, 1000 + 5*50 + 5]
@@ -454,7 +454,7 @@ fig = begin
 		push!(Any[CM.MarkerElement(marker = :circle, color = color, strokecolor = :transparent) for color in clrs[1:2]], CM.LineElement(color = :black, linestyle = :dash, linewidth=3.0)),
 		[diagonal_square_marker(temp_clrs1, temp_clrs2)],#CM.PolyElement(color=RGBA(0,0,0,0.2))]
 	]
-	model_labels = [[L"\text{Dual-Cone}", L"\text{PHIBI}", "Truth"], ["Uncertainty from intrinsic-variability"]]
+	model_labels = [[L"\text{PHIBI (static)}", L"\text{PHIBI}", "Truth"], ["Spread from intrinsic-variability"]]
 	legend = CM.Legend(fig[6, 1:2], model_markers, model_labels, ["", ""], valign = :center, halign = :center, framevisible = false)
 	legend.nbanks = 4
 	CM.rowgap!(fig.layout, 1, 10.0)
@@ -463,8 +463,10 @@ fig = begin
 	CM.rowgap!(fig.layout, 4, 10.0)
 	CM.rowgap!(fig.layout, 5, 10.0)
 	CM.colgap!(fig.layout, 1, 4.0)
+	CM.colsize!(fig.layout,1,350.0)
+	CM.colsize!(fig.layout,2,350.0)
 	#display(fig)
 
-	save(joinpath((@__DIR__), "phibi_jukebox_comparison.pdf"), fig)
+	save(joinpath((@__DIR__), "phibi_jukebox_comparison.png"), fig)
 	fig
 end

@@ -51,8 +51,8 @@ end
 
 function mse(img, img2)
 	nx = NxCorr(img)
-	log(divergence(nx, img2))
-	#log(mean((((img ./ flux(img)) .- (img2 ./ flux(img2)))) .^ 2))
+	#log(divergence(nx, img2))
+	log(mean((((img ./ flux(img)) .- (img2 ./ flux(img2)))) .^ 2))
 end
 
 function loss(θ, fpost, metadata, inimg)
@@ -75,31 +75,76 @@ fractional_noise = 0.01
 bulkx = 1.0
 bulky = 1.0
 bulkpix = 240
-raster_size = 120.0# in microarcseconds    
+raster_size = 240.0# in microarcseconds    
 snrcut = 3.0
 year = 2017
 
 data = Dict(2017=>"SR1_M87_2017_095_hi_hops_netcal_StokesI.uvfits", 2018 => "L2V1_M87_2018_111_b3_hops_netcal_10s_StokesI.uvfits", "bhex" => "frame0008_230.5_GHz_synthdata_ngEHTsim.uvfits")
 path = joinpath(dirname(dirname(@__DIR__)), "data", data[year])
-files = "/n/holylabs/doeleman_lab/Users/dochang/GRMHDImages/snapshots"
+files = "/Users/dominicchang/Desktop/CenterComparison/data/snapshots"#/n/holylabs/doeleman_lab/Users/dochang/GRMHDImages/snapshots"
+#filenames = filter(file->occursin("_160_", file), readdir(files))
 filenames = filter(file->occursin("_160_", file), readdir(files))
-for fname in filenames[(99+26):149]
+
+
+function (c::Callback)(state, loss, others...)
+	fpost = c.fpost
+	metadata = fpost.lpost.skymodel.metadata
+	loss_arr = c.loss_arr
+	grid = fpost.lpost.skymodel.grid
+	c.counter += 1
+
+	if c.counter % c.stride == 0
+		append!(loss_arr, loss)
+		println(
+			"Iteration: $(c.counter), Loss: $(loss), m_d: $(rad2μas(Comrade.transform(fpost, state.u).sky.m_d)) μas, spin: $(Comrade.transform(fpost, state.u).sky.spin), β: $(Comrade.transform(fpost, state.u).sky.βv), θs: $(Comrade.transform(fpost, state.u).sky.θs) deg, σimg: $(Comrade.transform(fpost, state.u).sky.σimg)",
+		)
+		tsol = Comrade.transform(fpost, state.u)
+		img=imageviz(intensitymap(ModifiedKerrGMRF(Comrade.transform(fpost, state.u).sky, metadata), grid), colormap = :inferno)
+		CairoMakie.text!(img.axis, (77-20), (65-20); text = latexstring("M/D: $(round(tsol.sky.m_d  |> rad2μas,digits=2))\\ \\mu as"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, (77-20), (52-20); text = latexstring("a: $(round(tsol.sky.spin, digits=2))"), color = :white, fontsize = 35)
+		CairoMakie.text!(img.axis, (77-20), (35-20); text = latexstring("\\theta_o: $(round(tsol.sky.θo, digits=2))\\degree"), color = :white, fontsize = 35)
+		display(img)
+		return false
+	else
+		return false
+	end
+end
+
+
+using Images
+img = Gray.(Images.load("/Users/dominicchang/Desktop/KerrGMRF/src/image_domain/image.png") )
+Float64.(img) ./ maximum(img) 
+#for fname in filenames[(99+9):149]
+#fname = filenames[99]
+fname = filenames[2]
 
 	img_path = joinpath(files, fname)
 
 	inimg = rotated(VIDA.load_image(img_path), 108.0/180*π)
 	inimg .= max.(inimg, maximum(inimg)/1_000)
-	inimg = regrid(inimg, imagepixels(μas2rad(120), μas2rad(120), 120, 120))
+	#inimg = regrid(inimg, imagepixels(μas2rad(120), μas2rad(120), 120, 120))
+	inimg = regrid(inimg, imagepixels(μas2rad(160), μas2rad(160), 160, 160))
+
+	#img = Gray.(Images.load("/Users/dominicchang/Desktop/KerrGMRF/src/image_domain/image.png") )
+	#inimg .= reverse((Float64.(img) )', dims = 1)
+	#inimg = regrid(inimg, imagepixels(μas2rad(120), μas2rad(120), 100, 100))
+	#inimg ./= sum(inimg)
+
+
+
 	npix = inimg.X |> length
 	fovx, fovy = fieldofview(inimg)
 
 	imageviz(inimg, colorscale = log10, colorrange = (1e-6, 1e-3), colormap = :inferno) |> display
+	imageviz(inimg, colormap = :inferno) |> display
+
 
 	bulkgrid = imagepixels(bulkx, bulky, bulkpix, bulkpix; executor = Serial())
 	transform1, cprior1 = matern(size(bulkgrid))
 	transform2, cprior2 = matern(size(bulkgrid))
 	prior = (
-		m_d = Uniform(μas2rad(1.0), μas2rad(8.0)),
+		#m_d = Uniform(μas2rad(1.0), μas2rad(8.0)),
+		m_d = Uniform(μas2rad(0.01), μas2rad(8.0)),
 		spin = Uniform(0.01, 0.99),
 		θo = Uniform(120.0, 179.0),
 		θs = Uniform(20, 90.0),
@@ -158,7 +203,32 @@ for fname in filenames[(99+26):149]
 				f = 1.0,
 			),
 		)
-	for _ in 1:75
+	curr = (sky = NamedTuple{keys(curr.sky)}(tsol.sky[keys(curr.sky)]),)
+		vals = ((post) -> begin
+			temp = prior_sample(post)#transform(fpost, prior_sample(fpost))
+			newvals = []
+			for key in keys(temp.sky)
+				if key in keys(curr.sky)
+					push!(newvals, getproperty(curr.sky, key))
+				else
+					push!(newvals, getproperty(temp.sky, key))
+				end
+			end
+			outvals = (sky = NamedTuple{keys(temp.sky)}(newvals),)
+			@reset outvals.sky.σimg = 1e-10
+			return Comrade.inverse(fpost, outvals)
+		end)(post)
+		xvals = Comrade.transform(fpost, vals)
+
+	newgrid = imagepixels(fovx, fovy, 1000,1000)
+	intmap = intensitymap(ModifiedKerrGMRF(xvals.sky, metadata), newgrid) 
+	intmap ./= flux(intmap)
+	|> imageviz
+
+	#joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt")
+	#fpath = open(joinpath(dirname(@__DIR__), "plotting", "$(split(img_path, "/")[end])_best_fits.txt"), "r")
+	#tsol = eval(Meta.parse(read(fpath, String)))
+	for _ in 1:100
 		curr = (sky = NamedTuple{keys(curr.sky)}(tsol.sky[keys(curr.sky)]),)
 		vals = ((post) -> begin
 			temp = prior_sample(post)#transform(fpost, prior_sample(fpost))
@@ -171,7 +241,7 @@ for fname in filenames[(99+26):149]
 				end
 			end
 			outvals = (sky = NamedTuple{keys(temp.sky)}(newvals),)
-			@reset outvals.sky.σimg = 1e-1
+			@reset outvals.sky.σimg = 1e0
 			return Comrade.inverse(fpost, outvals)
 		end)(post)
 		xvals = Comrade.transform(fpost, vals)
@@ -181,7 +251,7 @@ for fname in filenames[(99+26):149]
 		prob = OptimizationProblem(optf, vals, t)
 
 		#sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 100, callback = Callback(5, ()->nothing))
-		sol = solve(prob, OptimizationOptimisers.Adam(0.05), maxiters = 50, callback = Callback(5, fpost, ()->nothing))
+		sol = solve(prob, OptimizationOptimisers.Adam(0.2), maxiters = 100, callback = Callback(5, fpost, ()->nothing))
 
 		tsol = Comrade.transform(fpost, sol.u)
 
@@ -203,7 +273,7 @@ for fname in filenames[(99+26):149]
 			end
 		end
 		outvals = (sky = NamedTuple{keys(temp.sky)}(newvals),)
-		@reset outvals.sky.σimg = 1e-1#1
+		@reset outvals.sky.σimg = 1e0#1
 		return Comrade.inverse(fpost, outvals)
 	end)(post)
 	xvals = Comrade.transform(fpost, vals)

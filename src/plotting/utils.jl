@@ -5,7 +5,7 @@ struct MarginMakieHist <: PairPlots.VizTypeDiag
 	MarginMakieHist(; kwargs...) = new(kwargs)
 end
 function PairPlots.diagplot(
-	ax::CM.Makie.Axis,
+	ax::CairoMakie.Makie.Axis,
 	viz::MarginMakieHist,
 	series::PairPlots.AbstractSeries,
 	colname,
@@ -20,8 +20,8 @@ function PairPlots.diagplot(
 	bins = get(series.kwargs, :bins, 16)
 	bins = get(viz.kwargs, :bins, bins)
 
-	CM.Makie.hist!(ax, dat; series.kwargs..., viz.kwargs..., bins = bins, scale_to = 1.0)#normalization = :pdf)
-	CM.Makie.ylims!(ax, low = 0)
+	CairoMakie.Makie.hist!(ax, dat; series.kwargs..., viz.kwargs..., bins = bins, scale_to = 1.0)#normalization = :pdf)
+	CairoMakie.Makie.ylims!(ax, low = 0)
 end
 
 function _imgviz!(
@@ -35,15 +35,15 @@ function _imgviz!(
 	cmap = get(dkwargs, :colormap, :inferno)
 	delete!(dkwargs, :colormap)
 
-	hm = CM.heatmap!(ax, img; colorrange = crange, colormap = cmap, dkwargs...)
-	CM.rotate!(hm, -ComradeBase.posang(axisdims(img)))
+	hm = CairoMakie.heatmap!(ax, img; colorrange = crange, colormap = cmap, dkwargs...)
+	CairoMakie.rotate!(hm, -ComradeBase.posang(axisdims(img)))
 
 	color = scalebar_color
 	show_scalebar && add_scalebar!(ax, img, scale_length, color)
 
 	num_data_prods = fig.layout.size[1]
-	show_colorbar && CM.Colorbar(fig[1:num_data_prods, 3], hm; label = "Brightness (Jy/μas²)", tellheight = true)
-	CM.colgap!(fig.layout, 15)
+	show_colorbar && CairoMakie.Colorbar(fig[1:num_data_prods, 3], hm; label = "Brightness (Jy/μas²)", tellheight = true)
+	CairoMakie.colgap!(fig.layout, 15)
 
 	x1, y1 = rotmat(axisdims(img)) * VLBISkyModels.SVector(last(img.X), first(img.Y))
 	x2, y2 = rotmat(axisdims(img)) * VLBISkyModels.SVector(first(img.X), last(img.Y))
@@ -56,11 +56,11 @@ function _imgviz!(
 	yu = max(y1, y2, y3, y4)
 
 	# Flip x l and u for astronomer conventions
-	CM.xlims!(ax, (xu, xl))
-	CM.ylims!(ax, (yl, yu))
-	CM.trim!(fig.layout)
+	CairoMakie.xlims!(ax, (xu, xl))
+	CairoMakie.ylims!(ax, (yl, yu))
+	CairoMakie.trim!(fig.layout)
 
-	return CM.Makie.FigureAxisPlot(fig, ax, hm)
+	return CairoMakie.Makie.FigureAxisPlot(fig, ax, hm)
 end
 
 function _imgviz!(
@@ -124,8 +124,8 @@ function add_scalebar!(ax, img, scale_length, color)
 	barx = [x0 - fovx / 32, x0 - fovx / 32 - sl]
 	bary = fill(y0 + fovy / 32, 2)
 
-	CM.lines!(ax, barx, bary; color = color)
-	return CM.text!(
+	CairoMakie.lines!(ax, barx, bary; color = color)
+	return CairoMakie.text!(
 		ax, (barx[1] + (barx[2] - barx[1]) / 2), bary[1] + fovy / 64;
 		text = "$(round(Int, rad2μas(sl))) μas",
 		align = (:center, :bottom), color = color,
@@ -216,17 +216,17 @@ end
 
 function kde_estimate_richtext(values; digits = 2, color = nothing)
 	estimate = kde_estimate(values; digits)
-	text = CM.Makie.rich(
+	text = CairoMakie.Makie.rich(
 		string(estimate.center),
-		CM.Makie.subsup("-$(estimate.lower)", "+$(estimate.upper)"),
+		CairoMakie.Makie.subsup("-$(estimate.lower)", "+$(estimate.upper)"),
 	)
-	return isnothing(color) ? text : CM.Makie.rich(text; color)
+	return isnothing(color) ? text : CairoMakie.Makie.rich(text; color)
 end
 
 function add_kde_estimate_text!(
 	ax,
 	distributions...;
-	labels = ("Dual-Cone", "PHIBI"),
+	labels = ("PHIBI (static)", "PHIBI"),
 	colors = nothing,
 	digits = 2,
 	x = 0.03,
@@ -242,7 +242,7 @@ function add_kde_estimate_text!(
 	end
 
 	color_values = if colors === nothing
-		palette = CM.Makie.wong_colors()
+		palette = CairoMakie.Makie.wong_colors()
 		[palette[mod1(i, length(palette))] for i in 1:n]
 	else
 		collect(colors)
@@ -253,14 +253,14 @@ function add_kde_estimate_text!(
 
 	plots = Any[]
 	for i in 1:n
-		text = CM.Makie.rich(
+		text = CairoMakie.Makie.rich(
 			"$(label_values[i]): ",
 			kde_estimate_richtext(distributions[i]; digits);
 			color = color_values[i],
 		)
 		push!(
 			plots,
-			CM.text!(
+			CairoMakie.text!(
 				ax,
 				x,
 				y - (i - 1) * lineheight;
@@ -285,7 +285,7 @@ struct MarginMakieHist <: PairPlots.VizTypeDiag
 	MarginMakieHist(; kwargs...) = new(kwargs)
 end
 function PairPlots.diagplot(
-	ax::CM.Makie.Axis,
+	ax::CairoMakie.Makie.Axis,
 	viz::MarginMakieHist,
 	series::PairPlots.AbstractSeries,
 	colname,
@@ -300,8 +300,8 @@ function PairPlots.diagplot(
 	bins = get(series.kwargs, :bins, 16)
 	bins = get(viz.kwargs, :bins, bins)
 
-	CM.Makie.hist!(ax, dat; series.kwargs..., viz.kwargs..., bins = bins, scale_to = 1.0)#normalization = :pdf)
-	CM.Makie.ylims!(ax, low = 0)
+	CairoMakie.Makie.hist!(ax, dat; series.kwargs..., viz.kwargs..., bins = bins, scale_to = 1.0)#normalization = :pdf)
+	CairoMakie.Makie.ylims!(ax, low = 0)
 end
 
 function PairPlots.diagplot(ax::CM.Makie.Axis, viz::PairPlots.MarginQuantileText, series::PairPlots.AbstractSeries, colname)
