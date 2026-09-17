@@ -1,4 +1,4 @@
-struct _EmissivityModel{T, B}
+struct _EmissivityModelAdaptive{T, B}
 	magnetic_field::Krang.SVector{3, T}
 	fluid_velocity::Krang.SVector{3, T}
 	bulkmodel::B
@@ -10,22 +10,22 @@ struct _EmissivityModel{T, B}
 	raster_size::T
 	offset::T
 
-	function _EmissivityModel(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T, m_d::T, raster_size::T, offset::T) where {T, B}
+	function _EmissivityModelAdaptive(magfield, vel, bulkmodel::B, spec::T, rpeak::T, p1::T, p2::T, m_d::T, raster_size::T, offset::T) where {T, B}
 		new{T, B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, m_d, raster_size, offset)
 	end
 end
-struct EmissivityModel{N} <: Krang.AbstractMaterial
-	model::_EmissivityModel
+struct EmissivityModelAdaptive{N} <: Krang.AbstractMaterial
+	model::_EmissivityModelAdaptive
 	subimgs::NTuple{N, Int}
-	function EmissivityModel(model, n)
+	function EmissivityModelAdaptive(model, n)
 		new{length(n)}(model, n)
 	end
 end
 
-Krang.isFastLight(material::EmissivityModel) = true
-Krang.isAxisymmetric(material::EmissivityModel) = false
+Krang.isFastLight(material::EmissivityModelAdaptive) = true
+Krang.isAxisymmetric(material::EmissivityModelAdaptive) = false
 
-@inline function (prof::EmissivityModel)(pix::Krang.AbstractPixel, intersection::Krang.Intersection)
+@inline function (prof::EmissivityModelAdaptive)(pix::Krang.AbstractPixel, intersection::Krang.Intersection)
 	(; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof.model
 	(; rs, ϕs, θs, νr, νθ) = intersection
 
@@ -73,16 +73,16 @@ struct KerrGMRF{A, S, F} <: ComradeBase.AbstractModel
 		vel = Krang.SVector(βv, A(π / 2), χ)
 
 		magfield1 = Krang.SVector(sin(ι) * cos(η), sin(ι) * sin(η), cos(ι))
-		_material1 = _EmissivityModel(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2, m_d, raster_size, offset)
+		_material1 = _EmissivityModelAdaptive(magfield1, vel, bulkmodel1, spec, rpeak, p1, p2, m_d, raster_size, offset)
 		geometry1 = Krang.ConeGeometry(θs * π / 180, (; frac,))
-		mesh1_n0 = Krang.Mesh(geometry1, EmissivityModel(_material1, (0,)))
-		mesh1_n1 = Krang.Mesh(geometry1, EmissivityModel(_material1, (1,)))
+		mesh1_n0 = Krang.Mesh(geometry1, EmissivityModelAdaptive(_material1, (0,)))
+		mesh1_n1 = Krang.Mesh(geometry1, EmissivityModelAdaptive(_material1, (1,)))
 
 		magfield2 = Krang.SVector(-sin(ι) * cos(η), -sin(ι) * sin(η), cos(ι))
-		_material2 = _EmissivityModel(magfield2, vel, bulkmodel2, spec, rpeak, p1, p2, m_d, raster_size, offset)
+		_material2 = _EmissivityModelAdaptive(magfield2, vel, bulkmodel2, spec, rpeak, p1, p2, m_d, raster_size, offset)
 		geometry2 = Krang.ConeGeometry(π-θs * π / 180, (; frac,))
-		mesh2_n0 = Krang.Mesh(geometry2, EmissivityModel(_material2, (0,)))
-		mesh2_n1 = Krang.Mesh(geometry2, EmissivityModel(_material2, (1,)))
+		mesh2_n0 = Krang.Mesh(geometry2, EmissivityModelAdaptive(_material2, (0,)))
+		mesh2_n1 = Krang.Mesh(geometry2, EmissivityModelAdaptive(_material2, (1,)))
 
 		scene_n0 = Krang.Scene((mesh1_n0, mesh2_n0))
 		scene_n1 = Krang.Scene((mesh1_n1, mesh2_n1))
