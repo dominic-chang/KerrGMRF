@@ -31,10 +31,10 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
 	norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
 
-	rh = Krang.horizon(met)
+	#rh = Krang.horizon(met)
 	rs_h = rs # / rh
 	# grid has maximum radius of 30 units
-	rs_grid = (rs - rh) * rad2μas(m_d) / (raster_size - rh * rad2μas(m_d)) # convert to microarcseconds
+	rs_grid = rs / raster_size#(rs - rh) * rad2μas(m_d) / (raster_size - rh * rad2μas(m_d)) # convert to microarcseconds
 	if rs_grid < 0
 		return zero(T)
 	end
@@ -44,7 +44,7 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 	rat = (rs_h / rpeak)
 
 	bulkpix = bulkmodel.img.X.len
-	cp = exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2))
+	cp = n == 0 ? exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2)) : 1.0  # the pixel area is 1/(bulkpix^2)
 	ans = rat^p1 / (one(T) + rat^(p1 + p2)) * max(redshift, eps(T))^(T(3) + spectral_index) * cp
 	ans = norm^(1 + spectral_index) * min(lp, 1e2) * ans
 	# Add a clamp to lp to help remove hot pixels
