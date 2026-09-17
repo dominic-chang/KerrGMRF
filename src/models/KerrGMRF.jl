@@ -104,7 +104,6 @@ function Comrade.intensity_point(m::KerrGMRF{A, S, F}, p) where {A, S, F}
 	return ans
 end
 
-
 @inline function Krang._raytrace(
 	observation,
 	pix::Krang.AbstractPixel,
@@ -124,7 +123,7 @@ end
 			intersection = Krang.Intersection(zero(rs), rs, θs, ϕs, νr, νθ)
 
 			if issuccess && (Krang.horizon(Krang.metric(pix)) < rs < T(Inf))
-				observation += (@inline material(pix, intersection, n = n))# * (frac ^ n)
+				observation += (@inline material(pix, intersection))
 			end
 		end
 	end
