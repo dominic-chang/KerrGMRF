@@ -51,3 +51,28 @@ end
     ans = Krang.render(pix, scene)
     return ans #+ one(T)
 end
+
+function (linpol::Krang.ElectronSynchrotronPowerLawIntensity{N,T})(
+    pix::Krang.AbstractPixel,
+    intersection;
+    n=0
+) where {N,T}
+    (; magnetic_field, fluid_velocity, R, p1, p2, spectral_index) = linpol
+    (; rs, θs, νr, νθ) = intersection
+
+    θo = Krang.inclination(pix)
+    met = Krang.metric(pix)
+    α, β = Krang.screen_coordinate(pix)
+
+
+    norm, redshift, lp =
+        Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
+
+
+    rat = (rs / R)
+    prof = rat^p1 / (one(T) + rat^(p1 + p2)) * redshift^(T(3) + spectral_index)
+
+    # Add a clamp to lp to help remove hot pixels
+    return norm^(one(T) + spectral_index) * min(lp, T(1e2)) * prof
+end
+

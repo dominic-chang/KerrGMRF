@@ -15,8 +15,8 @@ struct EmissivityModel{N, T, B} <: Krang.AbstractMaterial
 		new{2, T, B}(magfield, vel, bulkmodel, spec, rpeak, p1, p2, m_d, raster_size, offset, (0, 1))
 	end
 end
-Krang.isFastLight(material::EmissivityModel) = true
-Krang.isAxisymmetric(material::EmissivityModel) = false
+Krang.isFastLight(::EmissivityModel) = true
+Krang.isAxisymmetric(::EmissivityModel) = false
 
 @inline function (prof::EmissivityModel{N, B})(pix::Krang.AbstractPixel, intersection; n = 0) where {N, B}
 	(; m_d, magnetic_field, fluid_velocity, bulkmodel, spectral_index, rpeak, p1, p2, raster_size, offset) = prof
@@ -30,8 +30,7 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 	norm, redshift, lp = @inline Krang.synchrotronIntensity(met, α, β, rs, θs, θo, magnetic_field, fluid_velocity, νr, νθ)
 
 	rh = Krang.horizon(met)
-	rs_h = rs # / rh
-	# grid has maximum radius of 30 units
+
 	rs_grid = (rs - rh) * rad2μas(m_d) / (raster_size - rh * rad2μas(m_d)) # convert to microarcseconds
 	if rs_grid < 0
 		return zero(T)
@@ -39,7 +38,7 @@ Krang.isAxisymmetric(material::EmissivityModel) = false
 
 	ϕks = Krang.ϕ_kerr_schild(met, rs, ϕs)
 	dim = (X = rs_grid * cos(ϕks) + offset, Y = rs_grid * sin(ϕks) + offset)
-	rat = (rs_h / rpeak)
+	rat = (rs / rpeak)
 
 	bulkpix = bulkmodel.img.X.len
 	cp = exp(ComradeBase.intensity_point(bulkmodel, dim) / (bulkpix^2))
